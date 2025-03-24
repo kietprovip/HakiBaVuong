@@ -33,10 +33,17 @@ public class AuthController : ControllerBase
         {
             return BadRequest(new { message = "Email đã tồn tại." });
         }
+        if (model.Password != model.ConfirmPassword)
+        {
+            return BadRequest(new { message = "Mật khẩu xác nhận không khớp." });
+        }
+        if (model.Password.Length < 6)
+        {
+            return BadRequest(new { message = "Mật khẩu phải có ít nhất 6 ký tự." });
+        }
 
         var user = _mapper.Map<User>(model);
         user.Password = BCrypt.Net.BCrypt.EnhancedHashPassword(model.Password);
-        user.Role = "staff";
         user.CreatedAt = DateTime.UtcNow;
 
         _context.Users.Add(user);

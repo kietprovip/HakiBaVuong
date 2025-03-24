@@ -33,6 +33,14 @@ public class CustomerAuthController : ControllerBase
         {
             return BadRequest(new { message = "Email đã tồn tại." });
         }
+        if (model.Password != model.ConfirmPassword)
+        {
+            return BadRequest(new { message = "Mật khẩu xác nhận không khớp." });
+        }
+        if (model.Password.Length < 6)
+        {
+            return BadRequest(new { message = "Mật khẩu phải có ít nhất 6 ký tự." });
+        }
 
         var user = _mapper.Map<Customer>(model);
         user.Password = BCrypt.Net.BCrypt.EnhancedHashPassword(model.Password);
@@ -43,6 +51,7 @@ public class CustomerAuthController : ControllerBase
 
         return Ok(new { message = "Đăng ký thành công" });
     }
+
 
     [HttpPost("loginCustomer")]
     public async Task<IActionResult> Login([FromBody] LoginCustomerDTO model)
