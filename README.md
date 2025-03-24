@@ -1,2 +1,2 @@
-Đây là BE của đồ án
+Đây là BE,
 Link FE: https://github.com/KingAzgad/doancosohutech.git
