@@ -12,7 +12,7 @@ using sexthu.Data;
 namespace HakiBaVuong.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20250324031519_Initial")]
+    [Migration("20250324143212_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -62,6 +62,10 @@ namespace HakiBaVuong.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -328,6 +332,10 @@ namespace HakiBaVuong.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
