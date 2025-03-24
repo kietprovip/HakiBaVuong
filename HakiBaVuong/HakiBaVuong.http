@@ -1,0 +1,6 @@
+@HakiBaVuong_HostAddress = http://localhost:5298
+
+GET {{HakiBaVuong_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
