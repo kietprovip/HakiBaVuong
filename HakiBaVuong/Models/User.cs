@@ -10,7 +10,6 @@ namespace HakiBaVuong.Models
         [Required]
         public string Name { get; set; }
 
-
         [Required, EmailAddress]
         public string Email { get; set; }
 
@@ -26,5 +25,6 @@ namespace HakiBaVuong.Models
 
         [ForeignKey("BrandId")]
         public virtual Brand Brand { get; set; }
+        public bool IsEmailVerified { get; set; } = false;
     }
 }
