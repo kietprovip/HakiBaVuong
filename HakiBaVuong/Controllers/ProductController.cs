@@ -2,7 +2,7 @@
 using HakiBaVuong.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using sexthu.Data;
+using HakiBaVuong.Data;
 
 namespace HakiBaVuong.Controllers
 {

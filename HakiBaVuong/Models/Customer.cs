@@ -19,5 +19,6 @@ namespace HakiBaVuong.Models
 
         public virtual ICollection<CustomerAddress> Addresses { get; set; }
         public virtual ICollection<Order> Orders { get; set; }
+        public bool IsEmailVerified { get; set; } = false;
     }
 }
