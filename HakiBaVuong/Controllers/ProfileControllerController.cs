@@ -25,11 +25,20 @@ public class ProfileController : ControllerBase
         _mapper = mapper;
     }
 
-
     [HttpGet("info")]
     public async Task<IActionResult> GetProfile()
     {
-        var customerId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+        var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(customerIdClaim))
+        {
+            return Unauthorized(new { message = "Token không chứa thông tin khách hàng (NameIdentifier)." });
+        }
+
+        if (!int.TryParse(customerIdClaim, out int customerId))
+        {
+            return Unauthorized(new { message = "CustomerId trong token không hợp lệ." });
+        }
+
         var customer = await _context.Customers
             .Include(c => c.Addresses)
             .FirstOrDefaultAsync(c => c.CustomerId == customerId);
@@ -43,7 +52,6 @@ public class ProfileController : ControllerBase
         return Ok(customerDto);
     }
 
-
     [HttpPut("update")]
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateCustomerDTO model)
     {
@@ -55,14 +63,12 @@ public class ProfileController : ControllerBase
             return NotFound(new { message = "Không tìm thấy khách hàng." });
         }
 
-
         customer.Name = model.Name ?? customer.Name;
         _context.Customers.Update(customer);
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Cập nhật thông tin cá nhân thành công." });
     }
-
 
     [HttpPost("request-reset-password")]
     public async Task<IActionResult> RequestResetPassword()
@@ -81,7 +87,6 @@ public class ProfileController : ControllerBase
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
     }
-
 
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordProfileDTO model)
@@ -117,13 +122,11 @@ public class ProfileController : ControllerBase
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
-
     private string GenerateOtp()
     {
         return new Random().Next(100000, 999999).ToString();
     }
 
- 
     private async Task SendOtpEmail(string email, string otp, string subject)
     {
         var fromAddress = new MailAddress("dabada911@gmail.com", "Shop Haki Bá Vương");
