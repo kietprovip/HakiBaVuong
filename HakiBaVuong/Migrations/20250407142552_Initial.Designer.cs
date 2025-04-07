@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HakiBaVuong.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20250407013758_CustomerAuthInitial")]
-    partial class CustomerAuthInitial
+    [Migration("20250407142552_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
