@@ -25,5 +25,6 @@ namespace HakiBaVuong.Models
 
         [ForeignKey("BrandId")]
         public virtual Brand Brand { get; set; }
+        public bool IsEmailVerified { get; set; } = false;
     }
 }

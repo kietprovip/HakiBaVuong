@@ -1,7 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using HakiBaVuong.Models;
 
-namespace sexthu.Data
+namespace HakiBaVuong.Data
 {
     public class DataContext : DbContext
     {
