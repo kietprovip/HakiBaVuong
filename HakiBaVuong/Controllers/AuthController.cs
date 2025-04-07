@@ -28,10 +28,15 @@ public class AuthController : ControllerBase
         _mapper = mapper;
     }
 
-
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterDTO model)
     {
+
+        if (!await ValidateCaptcha(model.CaptchaResponse))
+        {
+            return BadRequest(new { message = "Xác thực CAPTCHA thất bại." });
+        }
+
         if (await _context.Users.AnyAsync(u => u.Email == model.Email))
         {
             return BadRequest(new { message = "Email đã tồn tại." });
@@ -53,7 +58,6 @@ public class AuthController : ControllerBase
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
 
-
         string otp = GenerateOtp();
         HttpContext.Session.SetString($"RegisterOTP_{user.Email}", otp);
         await SendOtpEmail(user.Email, otp, "Xác thực email đăng ký");
@@ -61,6 +65,32 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Đăng ký thành công. Vui lòng kiểm tra email để xác thực." });
     }
 
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginDTO model)
+    {
+
+        if (!await ValidateCaptcha(model.CaptchaResponse))
+        {
+            return BadRequest(new { message = "Xác thực CAPTCHA thất bại." });
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
+        if (user == null || !BCrypt.Net.BCrypt.EnhancedVerify(model.Password, user.Password))
+        {
+            return Unauthorized(new { message = "Sai email hoặc mật khẩu." });
+        }
+
+        if (!user.IsEmailVerified)
+        {
+            return BadRequest(new { message = "Email chưa được xác thực." });
+        }
+
+        string otp = GenerateOtp();
+        HttpContext.Session.SetString($"2FA_OTP_{user.Email}", otp);
+        await SendOtpEmail(user.Email, otp, "Mã OTP đăng nhập 2FA");
+
+        return Ok(new { message = "Vui lòng nhập mã OTP đã gửi đến email của bạn." });
+    }
 
     [HttpPost("verify-email")]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyOtpDTO model)
@@ -84,30 +114,6 @@ public class AuthController : ControllerBase
         HttpContext.Session.Remove($"RegisterOTP_{model.Email}");
         return Ok(new { message = "Xác thực email thành công. Bạn có thể đăng nhập." });
     }
-
-
-    [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginDTO model)
-    {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
-        if (user == null || !BCrypt.Net.BCrypt.EnhancedVerify(model.Password, user.Password))
-        {
-            return Unauthorized(new { message = "Sai email hoặc mật khẩu." });
-        }
-
-        if (!user.IsEmailVerified)
-        {
-            return BadRequest(new { message = "Email chưa được xác thực." });
-        }
-
-
-        string otp = GenerateOtp();
-        HttpContext.Session.SetString($"2FA_OTP_{user.Email}", otp);
-        await SendOtpEmail(user.Email, otp, "Mã OTP đăng nhập 2FA");
-
-        return Ok(new { message = "Vui lòng nhập mã OTP đã gửi đến email của bạn." });
-    }
-
 
     [HttpPost("verify-2fa")]
     public async Task<IActionResult> Verify2FA([FromBody] VerifyOtpDTO model)
@@ -136,7 +142,6 @@ public class AuthController : ControllerBase
         });
     }
 
-
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO model)
     {
@@ -152,7 +157,6 @@ public class AuthController : ControllerBase
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
     }
-
 
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO model)
@@ -187,11 +191,32 @@ public class AuthController : ControllerBase
     }
 
 
+    private async Task<bool> ValidateCaptcha(string captchaResponse)
+    {
+        var secretKey = _config["GoogleReCaptcha:SecretKey"];
+        if (string.IsNullOrEmpty(captchaResponse))
+        {
+            return false;
+        }
+
+        var client = new HttpClient();
+        var result = await client.PostAsync(
+            "https://www.google.com/recaptcha/api/siteverify",
+            new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("secret", secretKey),
+                new KeyValuePair<string, string>("response", captchaResponse)
+            })
+        );
+
+        var responseString = await result.Content.ReadAsStringAsync();
+        return responseString.Contains("\"success\": true");
+    }
+
     private string GenerateOtp()
     {
         return new Random().Next(100000, 999999).ToString();
     }
-
 
     private async Task SendOtpEmail(string email, string otp, string subject)
     {
@@ -220,7 +245,6 @@ public class AuthController : ControllerBase
             await smtp.SendMailAsync(message);
         }
     }
-
 
     private string GenerateJwtToken(User user)
     {
