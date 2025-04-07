@@ -31,7 +31,7 @@ public class CustomerAuthController : ControllerBase
     [HttpPost("registerCustomer")]
     public async Task<IActionResult> Register([FromBody] RegisterCustomerDTO model)
     {
-        // Xác thực CAPTCHA
+
         if (!await ValidateCaptcha(model.CaptchaResponse))
         {
             return BadRequest(new { message = "Xác thực CAPTCHA thất bại." });
@@ -68,7 +68,7 @@ public class CustomerAuthController : ControllerBase
     [HttpPost("loginCustomer")]
     public async Task<IActionResult> Login([FromBody] LoginCustomerDTO model)
     {
-        // Xác thực CAPTCHA
+
         if (!await ValidateCaptcha(model.CaptchaResponse))
         {
             return BadRequest(new { message = "Xác thực CAPTCHA thất bại." });
@@ -189,7 +189,7 @@ public class CustomerAuthController : ControllerBase
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
-    // Hàm xác thực CAPTCHA - Sử dụng GoogleReCaptcha:SecretKey
+
     private async Task<bool> ValidateCaptcha(string captchaResponse)
     {
         var secretKey = _config["GoogleReCaptcha:SecretKey"];
