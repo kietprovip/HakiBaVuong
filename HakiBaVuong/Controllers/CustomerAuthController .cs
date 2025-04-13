@@ -28,7 +28,6 @@ public class CustomerAuthController : ControllerBase
         _mapper = mapper;
     }
 
-
     [HttpPost("registerCustomer")]
     public async Task<IActionResult> Register([FromBody] RegisterCustomerDTO model)
     {
@@ -48,11 +47,10 @@ public class CustomerAuthController : ControllerBase
         var customer = _mapper.Map<Customer>(model);
         customer.Password = BCrypt.Net.BCrypt.EnhancedHashPassword(model.Password);
         customer.CreatedAt = DateTime.UtcNow;
-        customer.IsEmailVerified = false; 
+        customer.IsEmailVerified = false;
 
         _context.Customers.Add(customer);
         await _context.SaveChangesAsync();
-
 
         string otp = GenerateOtp();
         HttpContext.Session.SetString($"RegisterOTP_{customer.Email}", otp);
@@ -60,7 +58,6 @@ public class CustomerAuthController : ControllerBase
 
         return Ok(new { message = "Đăng ký thành công. Vui lòng kiểm tra email để xác thực." });
     }
-
 
     [HttpPost("verify-email-customer")]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyOtpDTO model)
@@ -85,7 +82,6 @@ public class CustomerAuthController : ControllerBase
         return Ok(new { message = "Xác thực email thành công. Bạn có thể đăng nhập." });
     }
 
-
     [HttpPost("loginCustomer")]
     public async Task<IActionResult> Login([FromBody] LoginCustomerDTO model)
     {
@@ -100,33 +96,7 @@ public class CustomerAuthController : ControllerBase
             return BadRequest(new { message = "Email chưa được xác thực." });
         }
 
-
-        string otp = GenerateOtp();
-        HttpContext.Session.SetString($"2FA_OTP_{customer.Email}", otp);
-        await SendOtpEmail(customer.Email, otp, "Mã OTP đăng nhập 2FA");
-
-        return Ok(new { message = "Vui lòng nhập mã OTP đã gửi đến email của bạn." });
-    }
-
-
-    [HttpPost("verify-2fa-customer")]
-    public async Task<IActionResult> Verify2FA([FromBody] VerifyOtpDTO model)
-    {
-        var customer = await _context.Customers.FirstOrDefaultAsync(u => u.Email == model.Email);
-        if (customer == null)
-        {
-            return BadRequest(new { message = "Email không tồn tại." });
-        }
-
-        var storedOtp = HttpContext.Session.GetString($"2FA_OTP_{model.Email}");
-        if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
-        {
-            return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
-        }
-
         var token = GenerateJwtToken(customer);
-        HttpContext.Session.Remove($"2FA_OTP_{model.Email}");
-
         return Ok(new
         {
             message = "Đăng nhập thành công.",
@@ -134,7 +104,6 @@ public class CustomerAuthController : ControllerBase
             customerId = customer.CustomerId
         });
     }
-
 
     [HttpPost("forgot-password-customer")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO model)
@@ -147,11 +116,11 @@ public class CustomerAuthController : ControllerBase
 
         string otp = GenerateOtp();
         HttpContext.Session.SetString($"ResetPasswordOTP_{customer.Email}", otp);
+        Console.WriteLine($"Generated OTP for {model.Email}: {otp}"); // Thêm log để debug
         await SendOtpEmail(customer.Email, otp, "Mã OTP đặt lại mật khẩu");
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
     }
-
 
     [HttpPost("reset-password-customer")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO model)
@@ -163,6 +132,7 @@ public class CustomerAuthController : ControllerBase
         }
 
         var storedOtp = HttpContext.Session.GetString($"ResetPasswordOTP_{model.Email}");
+        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}"); // Thêm log để debug
         if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
         {
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
@@ -185,12 +155,10 @@ public class CustomerAuthController : ControllerBase
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
-
     private string GenerateOtp()
     {
         return new Random().Next(100000, 999999).ToString();
     }
-
 
     private async Task SendOtpEmail(string email, string otp, string subject)
     {
@@ -219,7 +187,6 @@ public class CustomerAuthController : ControllerBase
             await smtp.SendMailAsync(message);
         }
     }
-
 
     private string GenerateJwtToken(Customer customer)
     {

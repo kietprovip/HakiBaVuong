@@ -28,7 +28,6 @@ public class AuthController : ControllerBase
         _mapper = mapper;
     }
 
-
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterDTO model)
     {
@@ -53,14 +52,13 @@ public class AuthController : ControllerBase
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
 
-
         string otp = GenerateOtp();
         HttpContext.Session.SetString($"RegisterOTP_{user.Email}", otp);
+        Console.WriteLine($"Generated OTP for registration {model.Email}: {otp}"); // Thêm log để debug
         await SendOtpEmail(user.Email, otp, "Xác thực email đăng ký");
 
         return Ok(new { message = "Đăng ký thành công. Vui lòng kiểm tra email để xác thực." });
     }
-
 
     [HttpPost("verify-email")]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyOtpDTO model)
@@ -72,6 +70,7 @@ public class AuthController : ControllerBase
         }
 
         var storedOtp = HttpContext.Session.GetString($"RegisterOTP_{model.Email}");
+        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}"); // Thêm log để debug
         if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
         {
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
@@ -84,7 +83,6 @@ public class AuthController : ControllerBase
         HttpContext.Session.Remove($"RegisterOTP_{model.Email}");
         return Ok(new { message = "Xác thực email thành công. Bạn có thể đăng nhập." });
     }
-
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDTO model)
@@ -100,33 +98,8 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Email chưa được xác thực." });
         }
 
-
-        string otp = GenerateOtp();
-        HttpContext.Session.SetString($"2FA_OTP_{user.Email}", otp);
-        await SendOtpEmail(user.Email, otp, "Mã OTP đăng nhập 2FA");
-
-        return Ok(new { message = "Vui lòng nhập mã OTP đã gửi đến email của bạn." });
-    }
-
-
-    [HttpPost("verify-2fa")]
-    public async Task<IActionResult> Verify2FA([FromBody] VerifyOtpDTO model)
-    {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
-        if (user == null)
-        {
-            return BadRequest(new { message = "Email không tồn tại." });
-        }
-
-        var storedOtp = HttpContext.Session.GetString($"2FA_OTP_{model.Email}");
-        if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
-        {
-            return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
-        }
-
+        // Bỏ 2FA, trả về token ngay sau khi đăng nhập thành công
         var token = GenerateJwtToken(user);
-        HttpContext.Session.Remove($"2FA_OTP_{model.Email}");
-
         return Ok(new
         {
             message = "Đăng nhập thành công.",
@@ -135,7 +108,6 @@ public class AuthController : ControllerBase
             role = user.Role
         });
     }
-
 
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO model)
@@ -148,11 +120,11 @@ public class AuthController : ControllerBase
 
         string otp = GenerateOtp();
         HttpContext.Session.SetString($"ResetPasswordOTP_{user.Email}", otp);
+        Console.WriteLine($"Generated OTP for {model.Email}: {otp}"); // Thêm log để debug
         await SendOtpEmail(user.Email, otp, "Mã OTP đặt lại mật khẩu");
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
     }
-
 
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO model)
@@ -164,6 +136,7 @@ public class AuthController : ControllerBase
         }
 
         var storedOtp = HttpContext.Session.GetString($"ResetPasswordOTP_{model.Email}");
+        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}"); // Thêm log để debug
         if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
         {
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
@@ -186,12 +159,10 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
-
     private string GenerateOtp()
     {
         return new Random().Next(100000, 999999).ToString();
     }
-
 
     private async Task SendOtpEmail(string email, string otp, string subject)
     {
@@ -220,7 +191,6 @@ public class AuthController : ControllerBase
             await smtp.SendMailAsync(message);
         }
     }
-
 
     private string GenerateJwtToken(User user)
     {
