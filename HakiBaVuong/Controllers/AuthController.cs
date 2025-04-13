@@ -49,12 +49,15 @@ public class AuthController : ControllerBase
         user.CreatedAt = DateTime.UtcNow;
         user.IsEmailVerified = false;
 
+        // Gán role mặc định là Staff, nếu email là phamquanghaohao199@gmail.com thì gán role Admin
+        user.Role = model.Email.ToLower() == "phamquanghaohao199@gmail.com" ? "Admin" : "Staff";
+
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
 
         string otp = GenerateOtp();
         HttpContext.Session.SetString($"RegisterOTP_{user.Email}", otp);
-        Console.WriteLine($"Generated OTP for registration {model.Email}: {otp}"); // Thêm log để debug
+        Console.WriteLine($"Generated OTP for registration {model.Email}: {otp}");
         await SendOtpEmail(user.Email, otp, "Xác thực email đăng ký");
 
         return Ok(new { message = "Đăng ký thành công. Vui lòng kiểm tra email để xác thực." });
