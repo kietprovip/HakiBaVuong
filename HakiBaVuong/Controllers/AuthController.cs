@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -101,7 +101,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Email chưa được xác thực." });
         }
 
- 
+
         var token = GenerateJwtToken(user);
         return Ok(new
         {

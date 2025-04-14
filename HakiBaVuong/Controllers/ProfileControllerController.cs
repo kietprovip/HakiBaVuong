@@ -129,9 +129,11 @@ public class ProfileController : ControllerBase
 
     private async Task SendOtpEmail(string email, string otp, string subject)
     {
+
         var fromAddress = new MailAddress("dabada911@gmail.com", "Shop Haki Bá Vương");
+
         var toAddress = new MailAddress(email);
-        const string fromPassword = "cpixzanizbhrovko";
+        const string fromPassword = ".....";// add app password
         string body = $"Mã OTP của bạn là: <strong>{otp}</strong>. Vui lòng sử dụng mã này để hoàn tất quá trình.";
 
         var smtp = new SmtpClient
