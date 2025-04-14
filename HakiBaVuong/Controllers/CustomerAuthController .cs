@@ -132,7 +132,7 @@ public class CustomerAuthController : ControllerBase
         }
 
         var storedOtp = HttpContext.Session.GetString($"ResetPasswordOTP_{model.Email}");
-        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}"); // Thêm log để debug
+
         if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
         {
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
