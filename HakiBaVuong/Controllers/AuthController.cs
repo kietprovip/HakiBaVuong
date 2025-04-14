@@ -49,7 +49,6 @@ public class AuthController : ControllerBase
         user.CreatedAt = DateTime.UtcNow;
         user.IsEmailVerified = false;
 
-        // Gán role mặc định là Staff, nếu email là phamquanghaohao199@gmail.com thì gán role Admin
         user.Role = model.Email.ToLower() == "phamquanghaohao199@gmail.com" ? "Admin" : "Staff";
 
         _context.Users.Add(user);
@@ -73,7 +72,7 @@ public class AuthController : ControllerBase
         }
 
         var storedOtp = HttpContext.Session.GetString($"RegisterOTP_{model.Email}");
-        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}"); // Thêm log để debug
+        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}");
         if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
         {
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
@@ -101,7 +100,6 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Email chưa được xác thực." });
         }
 
-        // Bỏ 2FA, trả về token ngay sau khi đăng nhập thành công
         var token = GenerateJwtToken(user);
         return Ok(new
         {
@@ -123,7 +121,7 @@ public class AuthController : ControllerBase
 
         string otp = GenerateOtp();
         HttpContext.Session.SetString($"ResetPasswordOTP_{user.Email}", otp);
-        Console.WriteLine($"Generated OTP for {model.Email}: {otp}"); // Thêm log để debug
+        Console.WriteLine($"Generated OTP for {model.Email}: {otp}");
         await SendOtpEmail(user.Email, otp, "Mã OTP đặt lại mật khẩu");
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
@@ -139,7 +137,7 @@ public class AuthController : ControllerBase
         }
 
         var storedOtp = HttpContext.Session.GetString($"ResetPasswordOTP_{model.Email}");
-        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}"); // Thêm log để debug
+        Console.WriteLine($"Stored OTP: {storedOtp}, Provided OTP: {model.Otp}");
         if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
         {
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
