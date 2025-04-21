@@ -11,7 +11,7 @@ using HakiBaVuong.DTOs;
 using AutoMapper;
 using System.Net.Mail;
 using System.Net;
-using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Distributed;
 
 [Route("api/auth")]
 [ApiController]
@@ -20,27 +20,41 @@ public class AuthController : ControllerBase
     private readonly DataContext _context;
     private readonly IConfiguration _config;
     private readonly IMapper _mapper;
+    private readonly ILogger<AuthController> _logger;
+    private readonly IDistributedCache _cache;
 
-    public AuthController(DataContext context, IConfiguration config, IMapper mapper)
+    public AuthController(
+        DataContext context,
+        IConfiguration config,
+        IMapper mapper,
+        ILogger<AuthController> logger,
+        IDistributedCache cache)
     {
         _context = context;
         _config = config;
         _mapper = mapper;
+        _logger = logger;
+        _cache = cache;
     }
 
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterDTO model)
     {
+        _logger.LogInformation("Register called for email: {Email}, BrandId: {BrandId}", model.Email, model.BrandId);
+
         if (await _context.Users.AnyAsync(u => u.Email == model.Email))
         {
+            _logger.LogWarning("Email already exists: {Email}", model.Email);
             return BadRequest(new { message = "Email đã tồn tại." });
         }
         if (model.Password != model.ConfirmPassword)
         {
+            _logger.LogWarning("Password confirmation mismatch for email: {Email}", model.Email);
             return BadRequest(new { message = "Mật khẩu xác nhận không khớp." });
         }
         if (model.Password.Length < 6)
         {
+            _logger.LogWarning("Password too short for email: {Email}", model.Email);
             return BadRequest(new { message = "Mật khẩu phải có ít nhất 6 ký tự." });
         }
 
@@ -48,17 +62,46 @@ public class AuthController : ControllerBase
         user.Password = BCrypt.Net.BCrypt.EnhancedHashPassword(model.Password);
         user.CreatedAt = DateTime.UtcNow;
         user.IsEmailVerified = false;
-
-
         user.Role = model.Email.ToLower() == "phamquanghaohao199@gmail.com" ? "Admin" : "Staff";
+        user.BrandId = user.Role == "Staff" ? model.BrandId : null;
 
-        _context.Users.Add(user);
+        if (user.Role == "Staff" && !model.BrandId.HasValue)
+        {
+            _logger.LogWarning("BrandId is required for Staff: {Email}", model.Email);
+            return BadRequest(new { message = "Staff phải chọn một Brand." });
+        }
+
+        if (model.BrandId.HasValue)
+        {
+            var brand = await _context.Brands.FindAsync(model.BrandId.Value);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", model.BrandId);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
+            // Tùy chọn: Gán OwnerId cho brand nếu chưa có (bỏ nếu không cần)
+            if (brand.OwnerId == null && user.Role == "Staff")
+            {
+                _context.Users.Add(user);
+                await _context.SaveChangesAsync(); // Lưu user để có UserId
+                brand.OwnerId = user.UserId;
+                _context.Brands.Update(brand);
+            }
+        }
+
+        if (user.Role != "Staff" || !model.BrandId.HasValue)
+        {
+            _context.Users.Add(user);
+        }
+
         await _context.SaveChangesAsync();
 
         string otp = GenerateOtp();
-        HttpContext.Session.SetString($"RegisterOTP_{user.Email}", otp);
-        Console.WriteLine($"Generated OTP for registration {model.Email}: {otp}");
+        await StoreOtpInCache(user.Email, otp, "RegisterOTP");
+        _logger.LogInformation("Generated OTP for {Email}: {Otp}", user.Email, otp);
+
         await SendOtpEmail(user.Email, otp, "Xác thực email đăng ký");
+        _logger.LogInformation("Sent OTP email to {Email}", user.Email);
 
         return Ok(new { message = "Đăng ký thành công. Vui lòng kiểm tra email để xác thực." });
     }
@@ -66,65 +109,80 @@ public class AuthController : ControllerBase
     [HttpPost("verify-email")]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyOtpDTO model)
     {
+        _logger.LogInformation("VerifyEmail called for email: {Email}, OTP: {Otp}", model.Email, model.Otp);
+
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email && !u.IsEmailVerified);
         if (user == null)
         {
+            _logger.LogWarning("Email not found or already verified: {Email}", model.Email);
             return BadRequest(new { message = "Email không tồn tại hoặc đã được xác thực." });
         }
 
-        var storedOtp = HttpContext.Session.GetString($"RegisterOTP_{model.Email}");
-
-        if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
+        var cachedOtp = await _cache.GetStringAsync($"RegisterOTP_{model.Email}");
+        if (string.IsNullOrEmpty(cachedOtp) || cachedOtp.Trim() != model.Otp.Trim())
         {
+            _logger.LogWarning("Invalid or expired OTP for email: {Email}, Received: {Received}, Cached: {Cached}",
+                model.Email, model.Otp, cachedOtp);
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
         }
 
         user.IsEmailVerified = true;
         _context.Users.Update(user);
+        await _cache.RemoveAsync($"RegisterOTP_{model.Email}");
         await _context.SaveChangesAsync();
 
-        HttpContext.Session.Remove($"RegisterOTP_{model.Email}");
+        _logger.LogInformation("Email verified successfully for {Email}", model.Email);
         return Ok(new { message = "Xác thực email thành công. Bạn có thể đăng nhập." });
     }
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDTO model)
     {
+        _logger.LogInformation("Login called for email: {Email}", model.Email);
+
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
         if (user == null || !BCrypt.Net.BCrypt.EnhancedVerify(model.Password, user.Password))
         {
+            _logger.LogWarning("Invalid credentials for email: {Email}", model.Email);
             return Unauthorized(new { message = "Sai email hoặc mật khẩu." });
         }
 
         if (!user.IsEmailVerified)
         {
+            _logger.LogWarning("Email not verified for email: {Email}", model.Email);
             return BadRequest(new { message = "Email chưa được xác thực." });
         }
 
- 
         var token = GenerateJwtToken(user);
+        _logger.LogInformation("Login successful for email: {Email}", model.Email);
         return Ok(new
         {
             message = "Đăng nhập thành công.",
             token,
             userId = user.UserId,
-            role = user.Role
+            role = user.Role,
+            brandId = user.BrandId
         });
     }
 
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO model)
     {
+        _logger.LogInformation("ForgotPassword called for email: {Email}", model.Email);
+
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
         if (user == null)
         {
+            _logger.LogWarning("Email not found: {Email}", model.Email);
             return BadRequest(new { message = "Email không tồn tại." });
         }
 
         string otp = GenerateOtp();
-        HttpContext.Session.SetString($"ResetPasswordOTP_{user.Email}", otp);
+        await StoreOtpInCache(user.Email, otp, "ResetPasswordOTP");
+        _logger.LogInformation("Generated OTP for password reset: {Otp} for {Email}", otp, user.Email);
 
         await SendOtpEmail(user.Email, otp, "Mã OTP đặt lại mật khẩu");
+        _logger.LogInformation("Sent OTP email for password reset to {Email}", user.Email);
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
     }
@@ -132,39 +190,56 @@ public class AuthController : ControllerBase
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO model)
     {
+        _logger.LogInformation("ResetPassword called for email: {Email}", model.Email);
+
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
         if (user == null)
         {
+            _logger.LogWarning("Email not found: {Email}", model.Email);
             return BadRequest(new { message = "Email không tồn tại." });
         }
 
-        var storedOtp = HttpContext.Session.GetString($"ResetPasswordOTP_{model.Email}");
-
-        if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
+        var cachedOtp = await _cache.GetStringAsync($"ResetPasswordOTP_{model.Email}");
+        if (string.IsNullOrEmpty(cachedOtp) || cachedOtp.Trim() != model.Otp.Trim())
         {
+            _logger.LogWarning("Invalid or expired OTP for email: {Email}, Received: {Received}, Cached: {Cached}",
+                model.Email, model.Otp, cachedOtp);
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
         }
 
         if (model.NewPassword != model.ConfirmPassword)
         {
+            _logger.LogWarning("Password confirmation mismatch for email: {Email}", model.Email);
             return BadRequest(new { message = "Mật khẩu xác nhận không khớp." });
         }
         if (model.NewPassword.Length < 6)
         {
+            _logger.LogWarning("New password too short for email: {Email}", model.Email);
             return BadRequest(new { message = "Mật khẩu phải có ít nhất 6 ký tự." });
         }
 
         user.Password = BCrypt.Net.BCrypt.EnhancedHashPassword(model.NewPassword);
         _context.Users.Update(user);
+        await _cache.RemoveAsync($"ResetPasswordOTP_{model.Email}");
         await _context.SaveChangesAsync();
 
-        HttpContext.Session.Remove($"ResetPasswordOTP_{model.Email}");
+        _logger.LogInformation("Password reset successful for {Email}", model.Email);
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
     private string GenerateOtp()
     {
         return new Random().Next(100000, 999999).ToString();
+    }
+
+    private async Task StoreOtpInCache(string email, string otp, string otpType)
+    {
+        var cacheKey = $"{otpType}_{email}";
+        var cacheOptions = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+        };
+        await _cache.SetStringAsync(cacheKey, otp, cacheOptions);
     }
 
     private async Task SendOtpEmail(string email, string otp, string subject)
@@ -199,14 +274,21 @@ public class AuthController : ControllerBase
     {
         var key = Encoding.UTF8.GetBytes(_config["Jwt:Key"]);
         var tokenHandler = new JwtSecurityTokenHandler();
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role)
+        };
+
+        if (user.BrandId.HasValue)
+        {
+            claims.Add(new Claim("BrandId", user.BrandId.Value.ToString()));
+        }
+
         var tokenDescriptor = new SecurityTokenDescriptor
         {
-            Subject = new ClaimsIdentity(new Claim[]
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role)
-            }),
+            Subject = new ClaimsIdentity(claims),
             Expires = DateTime.UtcNow.AddHours(3),
             Issuer = _config["Jwt:Issuer"],
             Audience = _config["Jwt:Audience"],
