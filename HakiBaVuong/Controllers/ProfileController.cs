@@ -9,7 +9,7 @@ using HakiBaVuong.DTOs;
 using AutoMapper;
 using System.Net.Mail;
 using System.Net;
-using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Distributed;
 
 [Route("api/profile")]
 [ApiController]
@@ -18,11 +18,13 @@ public class ProfileController : ControllerBase
 {
     private readonly DataContext _context;
     private readonly IMapper _mapper;
+    private readonly IDistributedCache _cache;
 
-    public ProfileController(DataContext context, IMapper mapper)
+    public ProfileController(DataContext context, IMapper mapper, IDistributedCache cache)
     {
         _context = context;
         _mapper = mapper;
+        _cache = cache;
     }
 
     [HttpGet("info")]
@@ -82,7 +84,7 @@ public class ProfileController : ControllerBase
         }
 
         string otp = GenerateOtp();
-        HttpContext.Session.SetString($"ResetPasswordOTP_{customer.Email}", otp);
+        await StoreOtpInCache(customer.Email, otp, "ResetPasswordOTP");
         await SendOtpEmail(customer.Email, otp, "Mã OTP đặt lại mật khẩu");
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
@@ -99,8 +101,8 @@ public class ProfileController : ControllerBase
             return NotFound(new { message = "Không tìm thấy khách hàng." });
         }
 
-        var storedOtp = HttpContext.Session.GetString($"ResetPasswordOTP_{customer.Email}");
-        if (string.IsNullOrEmpty(storedOtp) || storedOtp != model.Otp)
+        var cachedOtp = await _cache.GetStringAsync($"ResetPasswordOTP_{customer.Email}");
+        if (string.IsNullOrEmpty(cachedOtp) || cachedOtp.Trim() != model.Otp.Trim())
         {
             return BadRequest(new { message = "Mã OTP không đúng hoặc đã hết hạn." });
         }
@@ -118,13 +120,23 @@ public class ProfileController : ControllerBase
         _context.Customers.Update(customer);
         await _context.SaveChangesAsync();
 
-        HttpContext.Session.Remove($"ResetPasswordOTP_{customer.Email}");
+        await _cache.RemoveAsync($"ResetPasswordOTP_{customer.Email}");
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
     private string GenerateOtp()
     {
         return new Random().Next(100000, 999999).ToString();
+    }
+
+    private async Task StoreOtpInCache(string email, string otp, string otpType)
+    {
+        var cacheKey = $"{otpType}_{email}";
+        var cacheOptions = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+        };
+        await _cache.SetStringAsync(cacheKey, otp, cacheOptions);
     }
 
     private async Task SendOtpEmail(string email, string otp, string subject)
