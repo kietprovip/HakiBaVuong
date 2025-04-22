@@ -10,7 +10,6 @@ namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
     public class BrandController : ControllerBase
     {
         private readonly DataContext _context;
@@ -21,9 +20,9 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<IEnumerable<Brand>>> GetAll()
         {
+
             return await _context.Brands.ToListAsync();
         }
 
@@ -34,7 +33,6 @@ namespace HakiBaVuong.Controllers
             var brand = await _context.Brands.FindAsync(id);
             if (brand == null)
                 return NotFound();
-
 
             if (User.IsInRole("Staff"))
             {
@@ -71,7 +69,6 @@ namespace HakiBaVuong.Controllers
             var brand = await _context.Brands.FindAsync(id);
             if (brand == null)
                 return NotFound();
-
 
             if (User.IsInRole("Staff"))
             {
