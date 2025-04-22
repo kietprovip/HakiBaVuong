@@ -1,8 +1,10 @@
 ﻿using HakiBaVuong.DTOs;
 using HakiBaVuong.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HakiBaVuong.Data;
+using System.Security.Claims;
 
 namespace HakiBaVuong.Controllers
 {
@@ -35,7 +37,42 @@ namespace HakiBaVuong.Controllers
             return Ok(products);
         }
 
+        // Endpoint mới dành riêng cho Staff để lấy danh sách sản phẩm theo thương hiệu của họ
+        [HttpGet("staff")]
+        [Authorize(Roles = "Staff")]
+        public async Task<ActionResult<IEnumerable<Product>>> GetAllForStaff()
+        {
+            _logger.LogInformation("GetAllForStaff products called");
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                _logger.LogWarning("Cannot determine userId from token.");
+                return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
+            var brandIds = await _context.Brands
+                .Where(b => b.OwnerId == userId)
+                .Select(b => b.BrandId)
+                .ToListAsync();
+
+            if (!brandIds.Any())
+            {
+                _logger.LogInformation("No brands found for staff user {UserId}", userId);
+                return Ok(new List<Product>()); // Trả về danh sách rỗng nếu không có thương hiệu
+            }
+
+            var products = await _context.Products
+                .Where(p => brandIds.Contains(p.BrandId))
+                .Include(p => p.Brand)
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} products for staff user {UserId}", products.Count, userId);
+            return Ok(products);
+        }
+
         [HttpGet("{id}")]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<ActionResult<Product>> GetById(int id)
         {
             _logger.LogInformation("GetById called for product ID: {Id}", id);
@@ -49,10 +86,28 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Sản phẩm không tồn tại." });
             }
 
+            if (User.IsInRole("Staff"))
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Cannot determine userId from token.");
+                    return BadRequest(new { message = "Không thể xác định userId từ token." });
+                }
+
+                var brand = await _context.Brands.FindAsync(product.BrandId);
+                if (brand == null || brand.OwnerId != userId)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, id);
+                    return Forbid();
+                }
+            }
+
             return Ok(product);
         }
 
         [HttpGet("brand/{brandId}")]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<ActionResult<IEnumerable<Product>>> GetByBrandId(int brandId)
         {
             _logger.LogInformation("GetByBrandId called for brand ID: {BrandId}", brandId);
@@ -64,6 +119,22 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Brand không tồn tại." });
             }
 
+            if (User.IsInRole("Staff"))
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Cannot determine userId from token.");
+                    return BadRequest(new { message = "Không thể xác định userId từ token." });
+                }
+
+                if (brand.OwnerId != userId)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, brandId);
+                    return Forbid();
+                }
+            }
+
             var products = await _context.Products
                 .Where(p => p.BrandId == brandId)
                 .Include(p => p.Brand)
@@ -73,6 +144,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<ActionResult<Product>> Create(ProductDTO productDto)
         {
             _logger.LogInformation("Create product called with name: {Name}, brandId: {BrandId}", productDto.Name, productDto.BrandId);
@@ -90,6 +162,22 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Brand không tồn tại." });
             }
 
+            if (User.IsInRole("Staff"))
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Cannot determine userId from token.");
+                    return BadRequest(new { message = "Không thể xác định userId từ token." });
+                }
+
+                if (brand.OwnerId != userId)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, productDto.BrandId);
+                    return Forbid();
+                }
+            }
+
             var product = new Product
             {
                 BrandId = productDto.BrandId,
@@ -103,7 +191,6 @@ namespace HakiBaVuong.Controllers
 
             _context.Products.Add(product);
             await _context.SaveChangesAsync();
-
 
             var inventory = new Inventory
             {
@@ -119,6 +206,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<IActionResult> Update(int id, ProductDTO productDto)
         {
             _logger.LogInformation("Update product called for ID: {Id}", id);
@@ -143,6 +231,22 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Brand không tồn tại." });
             }
 
+            if (User.IsInRole("Staff"))
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Cannot determine userId from token.");
+                    return BadRequest(new { message = "Không thể xác định userId từ token." });
+                }
+
+                if (brand.OwnerId != userId)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, productDto.BrandId);
+                    return Forbid();
+                }
+            }
+
             product.Name = productDto.Name;
             product.Description = productDto.Description;
             product.PriceSell = productDto.PriceSell;
@@ -156,6 +260,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<IActionResult> Delete(int id)
         {
             _logger.LogInformation("Delete product called for ID: {Id}", id);
@@ -167,7 +272,23 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Sản phẩm không tồn tại." });
             }
 
- 
+            if (User.IsInRole("Staff"))
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Cannot determine userId from token.");
+                    return BadRequest(new { message = "Không thể xác định userId từ token." });
+                }
+
+                var brand = await _context.Brands.FindAsync(product.BrandId);
+                if (brand == null || brand.OwnerId != userId)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, id);
+                    return Forbid();
+                }
+            }
+
             var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == id);
             if (inventory != null)
             {
