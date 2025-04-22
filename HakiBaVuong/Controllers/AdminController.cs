@@ -8,6 +8,7 @@ using AutoMapper;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 
 [Route("api/admin")]
 [ApiController]
@@ -16,145 +17,252 @@ public class AdminController : ControllerBase
 {
     private readonly DataContext _context;
     private readonly IMapper _mapper;
+    private readonly ILogger<AdminController> _logger;
 
-    public AdminController(DataContext context, IMapper mapper)
+    public AdminController(DataContext context, IMapper mapper, ILogger<AdminController> logger)
     {
         _context = context;
         _mapper = mapper;
+        _logger = logger;
     }
 
-    // Quản lý User
+
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers()
     {
-        var users = await _context.Users
-        .Include(u => u.Brand)
-        .ToListAsync();
-        var userDTOs = _mapper.Map<List<UserDTO>>(users);
-        return Ok(userDTOs);
+        try
+        {
+            var users = await _context.Users
+                .Include(u => u.Brand)
+                .ToListAsync();
+            var userDTOs = _mapper.Map<List<UserDTO>>(users);
+            return Ok(userDTOs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi lấy danh sách users.");
+            return StatusCode(500, new { message = "Lỗi server khi lấy danh sách users.", error = ex.Message });
+        }
     }
 
     [HttpGet("users/{id}")]
     public async Task<IActionResult> GetUser(int id)
     {
-        var user = await _context.Users
-        .Include(u => u.Brand)
-        .FirstOrDefaultAsync(u => u.UserId == id);
-        if (user == null)
+        try
         {
-            return NotFound(new { message = "Không tìm thấy user." });
+            var user = await _context.Users
+                .Include(u => u.Brand)
+                .FirstOrDefaultAsync(u => u.UserId == id);
+            if (user == null)
+            {
+                return NotFound(new { message = "Không tìm thấy user." });
+            }
+            var userDTO = _mapper.Map<UserDTO>(user);
+            return Ok(userDTO);
         }
-        var userDTO = _mapper.Map<UserDTO>(user);
-        return Ok(userDTO);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi lấy user.");
+            return StatusCode(500, new { message = "Lỗi server khi lấy user.", error = ex.Message });
+        }
     }
 
     [HttpPut("users/{id}")]
-    public async Task<IActionResult> UpdateUser(int id, [FromBody] UserDTO model)
+    public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserDTO model)
     {
-        var user = await _context.Users.FindAsync(id);
-        if (user == null)
+        try
         {
-            return NotFound(new { message = "Không tìm thấy user." });
-        }
+            if (model == null || string.IsNullOrWhiteSpace(model.Name))
+            {
+                return BadRequest(new { message = "Tên user không được để trống." });
+            }
 
-        if (await _context.Users.AnyAsync(u => u.Email == model.Email && u.UserId != id))
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+            {
+                return NotFound(new { message = "Không tìm thấy user." });
+            }
+
+            user.Name = model.Name.Trim();
+            user.UpdatedAt = DateTime.UtcNow;
+
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Cập nhật user thành công." });
+        }
+        catch (DbUpdateException dbEx)
         {
-            return BadRequest(new { message = "Email đã tồn tại." });
+            _logger.LogError(dbEx, "Lỗi khi cập nhật user vào database.");
+            return StatusCode(500, new { message = "Lỗi khi lưu user vào database.", error = dbEx.InnerException?.Message ?? dbEx.Message });
         }
-
-        user.Name = model.Name;
-        user.Email = model.Email;
-        user.Role = model.Role;
-        user.BrandId = model.BrandId;
-        user.UpdatedAt = DateTime.UtcNow;
-
-        _context.Users.Update(user);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { message = "Cập nhật user thành công." });
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi server khi cập nhật user.");
+            return StatusCode(500, new { message = "Lỗi server khi cập nhật user.", error = ex.Message });
+        }
     }
 
     [HttpDelete("users/{id}")]
     public async Task<IActionResult> DeleteUser(int id)
     {
-        var user = await _context.Users.FindAsync(id);
-        if (user == null)
+        try
         {
-            return NotFound(new { message = "Không tìm thấy user." });
-        }
+            var user = await _context.Users
+                .Include(u => u.Brand)
+                .FirstOrDefaultAsync(u => u.UserId == id);
+            if (user == null)
+            {
+                return NotFound(new { message = "Không tìm thấy user." });
+            }
 
-        if (user.Role == "Admin")
+            if (user.Role == "Admin")
+            {
+                return BadRequest(new { message = "Không thể xóa tài khoản Admin." });
+            }
+
+            var brandToDelete = await _context.Brands
+                .Include(b => b.Products)
+                .Include(b => b.Orders)
+                .ThenInclude(o => o.OrderItems)
+                .FirstOrDefaultAsync(b => b.OwnerId == user.UserId);
+
+            if (brandToDelete != null)
+            {
+
+                foreach (var order in brandToDelete.Orders.ToList())
+                {
+                    _context.OrderItems.RemoveRange(order.OrderItems);
+                    _context.Orders.Remove(order);
+                }
+
+
+                _context.Products.RemoveRange(brandToDelete.Products);
+
+
+                _context.Brands.Remove(brandToDelete);
+            }
+
+
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Xóa user thành công." });
+        }
+        catch (Exception ex)
         {
-            return BadRequest(new { message = "Không thể xóa tài khoản Admin." });
+            _logger.LogError(ex, "Lỗi server khi xóa user.");
+            return StatusCode(500, new { message = "Lỗi server khi xóa user.", error = ex.Message });
         }
-
-        _context.Users.Remove(user);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { message = "Xóa user thành công." });
     }
 
-    // Quản lý Customer
+
     [HttpGet("customers")]
     public async Task<IActionResult> GetCustomers()
     {
-        var customers = await _context.Customers
-        .Include(c => c.Addresses)
-        .ToListAsync();
-        var customerDTOs = _mapper.Map<List<CustomerDTO>>(customers);
-        return Ok(customerDTOs);
+        try
+        {
+            var customers = await _context.Customers
+                .Include(c => c.Addresses)
+                .ToListAsync();
+            var customerDTOs = _mapper.Map<List<CustomerDTO>>(customers);
+            return Ok(customerDTOs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi lấy danh sách customers.");
+            return StatusCode(500, new { message = "Lỗi server khi lấy danh sách customers.", error = ex.Message });
+        }
     }
 
     [HttpGet("customers/{id}")]
     public async Task<IActionResult> GetCustomer(int id)
     {
-        var customer = await _context.Customers
-        .Include(c => c.Addresses)
-        .FirstOrDefaultAsync(c => c.CustomerId == id);
-        if (customer == null)
+        try
         {
-            return NotFound(new { message = "Không tìm thấy customer." });
+            var customer = await _context.Customers
+                .Include(c => c.Addresses)
+                .FirstOrDefaultAsync(c => c.CustomerId == id);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Không tìm thấy customer." });
+            }
+            var customerDTO = _mapper.Map<CustomerDTO>(customer);
+            return Ok(customerDTO);
         }
-        var customerDTO = _mapper.Map<CustomerDTO>(customer);
-        return Ok(customerDTO);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi lấy customer.");
+            return StatusCode(500, new { message = "Lỗi server khi lấy customer.", error = ex.Message });
+        }
     }
 
     [HttpPut("customers/{id}")]
-    public async Task<IActionResult> UpdateCustomer(int id, [FromBody] CustomerDTO model)
+    public async Task<IActionResult> UpdateCustomer(int id, [FromBody] UpdateCustomerDTO model)
     {
-        var customer = await _context.Customers.FindAsync(id);
-        if (customer == null)
+        try
         {
-            return NotFound(new { message = "Không tìm thấy customer." });
-        }
+            if (model == null || string.IsNullOrWhiteSpace(model.Name))
+            {
+                return BadRequest(new { message = "Tên khách hàng không được để trống." });
+            }
 
-        if (await _context.Customers.AnyAsync(c => c.Email == model.Email && c.CustomerId != id))
+            var customer = await _context.Customers.FindAsync(id);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Không tìm thấy customer." });
+            }
+
+            customer.Name = model.Name.Trim();
+
+            _context.Customers.Update(customer);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Cập nhật customer thành công." });
+        }
+        catch (DbUpdateException dbEx)
         {
-            return BadRequest(new { message = "Email đã tồn tại." });
+            _logger.LogError(dbEx, "Lỗi khi cập nhật customer vào database.");
+            return StatusCode(500, new { message = "Lỗi khi lưu customer vào database.", error = dbEx.InnerException?.Message ?? dbEx.Message });
         }
-
-        customer.Name = model.Name;
-        customer.Email = model.Email;
-        customer.IsEmailVerified = model.IsEmailVerified;
-
-        _context.Customers.Update(customer);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { message = "Cập nhật customer thành công." });
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi server khi cập nhật customer.");
+            return StatusCode(500, new { message = "Lỗi server khi cập nhật customer.", error = ex.Message });
+        }
     }
 
     [HttpDelete("customers/{id}")]
     public async Task<IActionResult> DeleteCustomer(int id)
     {
-        var customer = await _context.Customers.FindAsync(id);
-        if (customer == null)
+        try
         {
-            return NotFound(new { message = "Không tìm thấy customer." });
+            var customer = await _context.Customers
+                .Include(c => c.Orders)
+                .ThenInclude(o => o.OrderItems)
+                .FirstOrDefaultAsync(c => c.CustomerId == id);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Không tìm thấy customer." });
+            }
+
+
+            foreach (var order in customer.Orders.ToList())
+            {
+                _context.OrderItems.RemoveRange(order.OrderItems);
+                _context.Orders.Remove(order);
+            }
+
+
+            _context.Customers.Remove(customer);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Xóa customer thành công." });
         }
-
-        _context.Customers.Remove(customer);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { message = "Xóa customer thành công." });
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi server khi xóa customer.");
+            return StatusCode(500, new { message = "Lỗi server khi xóa customer.", error = ex.Message });
+        }
     }
 }
