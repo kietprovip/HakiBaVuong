@@ -16,7 +16,7 @@ namespace HakiBaVuong.Models
         public string Address { get; set; }
 
         [Required]
-        public string Status { get; set; } // 'pending', 'processing', 'shipped', 'delivered', 'canceled'
+        public string Status { get; set; }
 
         [Required]
         public decimal TotalAmount { get; set; }

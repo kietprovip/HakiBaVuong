@@ -17,7 +17,7 @@ namespace HakiBaVuong.Models
         public string Password { get; set; }
 
         [Required]
-        public string Role { get; set; } // 'admin', 'brand_owner', 'staff'
+        public string Role { get; set; }
 
         public int? BrandId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;

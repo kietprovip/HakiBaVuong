@@ -2,7 +2,7 @@
 {
     public class StaffPermissionDTO
     {
-        public int StaffId { get; set; } // Nhân viên (User ID)
-        public int PermissionId { get; set; } // Quyền (Permission ID)
+        public int StaffId { get; set; }
+        public int PermissionId { get; set; }
     }
 }

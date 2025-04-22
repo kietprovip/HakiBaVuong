@@ -45,7 +45,7 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogInformation("GetAllForStaff products called");
 
-                // Kiểm tra token và lấy userId
+
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (string.IsNullOrEmpty(userIdClaim))
                 {
@@ -59,7 +59,7 @@ namespace HakiBaVuong.Controllers
                     return BadRequest(new { message = "UserId trong token không hợp lệ." });
                 }
 
-                // Nếu là Admin, trả về toàn bộ sản phẩm
+
                 if (User.IsInRole("Admin"))
                 {
                     try
@@ -77,7 +77,7 @@ namespace HakiBaVuong.Controllers
                     }
                 }
 
-                // Nếu là Staff, chỉ trả về sản phẩm của thương hiệu mà tài khoản sở hữu
+
                 List<int> brandIds;
                 try
                 {

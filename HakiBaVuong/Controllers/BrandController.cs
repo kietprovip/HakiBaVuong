@@ -20,23 +20,23 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Admin,Staff")] // Yêu cầu người dùng phải đăng nhập
+        [Authorize(Roles = "Admin,Staff")] 
         public async Task<ActionResult<IEnumerable<Brand>>> GetAll()
         {
-            // Lấy UserId từ token của người dùng đang đăng nhập
+
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
             {
                 return BadRequest(new { message = "Không thể xác định userId từ token." });
             }
 
-            // Nếu người dùng là Admin, trả về toàn bộ danh sách thương hiệu
+
             if (User.IsInRole("Admin"))
             {
                 return await _context.Brands.ToListAsync();
             }
 
-            // Nếu người dùng là Staff, chỉ trả về các thương hiệu có OwnerId trùng với UserId
+
             var brands = await _context.Brands
                 .Where(b => b.OwnerId == userId)
                 .ToListAsync();
@@ -73,7 +73,7 @@ namespace HakiBaVuong.Controllers
             var brand = new Brand
             {
                 Name = brandDto.Name,
-                OwnerId = User.IsInRole("Admin") ? brandDto.OwnerId : userId, // Staff chỉ có thể tạo brand với OwnerId là chính họ
+                OwnerId = User.IsInRole("Admin") ? brandDto.OwnerId : userId,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -100,7 +100,7 @@ namespace HakiBaVuong.Controllers
             }
 
             brand.Name = brandDto.Name;
-            brand.OwnerId = User.IsInRole("Admin") ? brandDto.OwnerId : brand.OwnerId; // Staff không được thay đổi OwnerId
+            brand.OwnerId = User.IsInRole("Admin") ? brandDto.OwnerId : brand.OwnerId;
 
             await _context.SaveChangesAsync();
             return NoContent();
