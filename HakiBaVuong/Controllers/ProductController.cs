@@ -37,38 +37,88 @@ namespace HakiBaVuong.Controllers
             return Ok(products);
         }
 
-        // Endpoint mới dành riêng cho Staff để lấy danh sách sản phẩm theo thương hiệu của họ
         [HttpGet("staff")]
-        [Authorize(Roles = "Staff")]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<ActionResult<IEnumerable<Product>>> GetAllForStaff()
         {
-            _logger.LogInformation("GetAllForStaff products called");
-
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            try
             {
-                _logger.LogWarning("Cannot determine userId from token.");
-                return BadRequest(new { message = "Không thể xác định userId từ token." });
+                _logger.LogInformation("GetAllForStaff products called");
+
+                // Kiểm tra token và lấy userId
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim))
+                {
+                    _logger.LogWarning("UserId claim is missing in token.");
+                    return Unauthorized(new { message = "Token không hợp lệ: Thiếu userId." });
+                }
+
+                if (!int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Invalid userId format in token: {UserIdClaim}", userIdClaim);
+                    return BadRequest(new { message = "UserId trong token không hợp lệ." });
+                }
+
+                // Nếu là Admin, trả về toàn bộ sản phẩm
+                if (User.IsInRole("Admin"))
+                {
+                    try
+                    {
+                        var allProducts = await _context.Products
+                            .Include(p => p.Brand)
+                            .ToListAsync();
+                        _logger.LogInformation("Admin retrieved {Count} products", allProducts.Count);
+                        return Ok(allProducts);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error occurred while fetching all products for Admin.");
+                        return StatusCode(500, new { message = "Lỗi khi lấy danh sách sản phẩm cho Admin. Vui lòng thử lại sau." });
+                    }
+                }
+
+                // Nếu là Staff, chỉ trả về sản phẩm của thương hiệu mà tài khoản sở hữu
+                List<int> brandIds;
+                try
+                {
+                    brandIds = await _context.Brands
+                        .Where(b => b.OwnerId == userId)
+                        .Select(b => b.BrandId)
+                        .ToListAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error occurred while fetching brands for staff user {UserId}", userId);
+                    return StatusCode(500, new { message = "Lỗi khi lấy danh sách thương hiệu. Vui lòng thử lại sau." });
+                }
+
+                if (!brandIds.Any())
+                {
+                    _logger.LogInformation("No brands found for staff user {UserId}", userId);
+                    return Ok(new List<Product>());
+                }
+
+                try
+                {
+                    var products = await _context.Products
+                        .Where(p => brandIds.Contains(p.BrandId))
+                        .Include(p => p.Brand)
+                        .ToListAsync();
+
+                    _logger.LogInformation("Retrieved {Count} products for staff user {UserId}", products.Count, userId);
+                    return Ok(products);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error occurred while fetching products for staff user {UserId}", userId);
+                    return StatusCode(500, new { message = "Lỗi khi lấy danh sách sản phẩm cho Staff. Vui lòng thử lại sau." });
+                }
             }
-
-            var brandIds = await _context.Brands
-                .Where(b => b.OwnerId == userId)
-                .Select(b => b.BrandId)
-                .ToListAsync();
-
-            if (!brandIds.Any())
+            catch (Exception ex)
             {
-                _logger.LogInformation("No brands found for staff user {UserId}", userId);
-                return Ok(new List<Product>()); // Trả về danh sách rỗng nếu không có thương hiệu
+                _logger.LogError(ex, "Unexpected error in GetAllForStaff.");
+                return StatusCode(500, new { message = "Đã xảy ra lỗi không xác định. Vui lòng thử lại sau." });
             }
-
-            var products = await _context.Products
-                .Where(p => brandIds.Contains(p.BrandId))
-                .Include(p => p.Brand)
-                .ToListAsync();
-
-            _logger.LogInformation("Retrieved {Count} products for staff user {UserId}", products.Count, userId);
-            return Ok(products);
         }
 
         [HttpGet("{id}")]
