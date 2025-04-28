@@ -1,5 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HakiBaVuong.Models
 {
@@ -21,14 +21,19 @@ namespace HakiBaVuong.Models
         [Required]
         public decimal TotalAmount { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.Now;
-        public DateTime UpdatedAt { get; set; } = DateTime.Now;
+        public int? PaymentId { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         [ForeignKey("BrandId")]
         public virtual Brand Brand { get; set; }
 
         [ForeignKey("CustomerId")]
         public virtual Customer Customer { get; set; }
+
+        [ForeignKey("PaymentId")]
+        public virtual Payment Payment { get; set; }
 
         public virtual ICollection<OrderItem> OrderItems { get; set; }
     }

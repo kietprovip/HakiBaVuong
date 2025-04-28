@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HakiBaVuong.Data;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 
 namespace HakiBaVuong.Controllers
 {
@@ -14,11 +15,13 @@ namespace HakiBaVuong.Controllers
     {
         private readonly DataContext _context;
         private readonly ILogger<ProductController> _logger;
+        private readonly IWebHostEnvironment _environment;
 
-        public ProductController(DataContext context, ILogger<ProductController> logger)
+        public ProductController(DataContext context, ILogger<ProductController> logger, IWebHostEnvironment environment)
         {
             _context = context;
             _logger = logger;
+            _environment = environment;
         }
 
         [HttpGet]
@@ -45,7 +48,6 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogInformation("GetAllForStaff products called");
 
-
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (string.IsNullOrEmpty(userIdClaim))
                 {
@@ -58,7 +60,6 @@ namespace HakiBaVuong.Controllers
                     _logger.LogWarning("Invalid userId format in token: {UserIdClaim}", userIdClaim);
                     return BadRequest(new { message = "UserId trong token không hợp lệ." });
                 }
-
 
                 if (User.IsInRole("Admin"))
                 {
@@ -76,7 +77,6 @@ namespace HakiBaVuong.Controllers
                         return StatusCode(500, new { message = "Lỗi khi lấy danh sách sản phẩm cho Admin. Vui lòng thử lại sau." });
                     }
                 }
-
 
                 List<int> brandIds;
                 try
@@ -235,6 +235,7 @@ namespace HakiBaVuong.Controllers
                 Description = productDto.Description,
                 PriceSell = productDto.PriceSell,
                 PriceCost = productDto.PriceCost,
+                Image = productDto.Image,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -302,6 +303,7 @@ namespace HakiBaVuong.Controllers
             product.PriceSell = productDto.PriceSell;
             product.PriceCost = productDto.PriceCost;
             product.BrandId = productDto.BrandId;
+            product.Image = productDto.Image;
             product.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -345,10 +347,105 @@ namespace HakiBaVuong.Controllers
                 _context.Inventories.Remove(inventory);
             }
 
+
+            if (!string.IsNullOrEmpty(product.Image))
+            {
+                var imagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
+                if (System.IO.File.Exists(imagePath))
+                {
+                    System.IO.File.Delete(imagePath);
+                    _logger.LogInformation("Deleted image for product ID: {Id}", id);
+                }
+            }
+
             _context.Products.Remove(product);
             await _context.SaveChangesAsync();
             _logger.LogInformation("Deleted product ID: {Id}", id);
             return NoContent();
+        }
+
+        [HttpPost("{id}/upload-image")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> UploadImage(int id, IFormFile file)
+        {
+            _logger.LogInformation("UploadImage called for product ID: {Id}", id);
+
+            var product = await _context.Products.FindAsync(id);
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {Id}", id);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff"))
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Cannot determine userId from token.");
+                    return BadRequest(new { message = "Không thể xác định userId từ token." });
+                }
+
+                var brand = await _context.Brands.FindAsync(product.BrandId);
+                if (brand == null || brand.OwnerId != userId)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, id);
+                    return Forbid();
+                }
+            }
+
+            if (file == null || file.Length == 0)
+            {
+                _logger.LogWarning("No file uploaded for product ID: {Id}", id);
+                return BadRequest(new { message = "Vui lòng cung cấp file ảnh." });
+            }
+
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (!allowedExtensions.Contains(extension))
+            {
+                _logger.LogWarning("Invalid file extension {Extension} for product ID: {Id}", extension, id);
+                return BadRequest(new { message = "Định dạng file không hợp lệ. Chỉ hỗ trợ .jpg, .jpeg, .png, .gif." });
+            }
+
+            var maxFileSize = 5 * 1024 * 1024;
+            if (file.Length > maxFileSize)
+            {
+                _logger.LogWarning("File size {Size} exceeds limit for product ID: {Id}", file.Length, id);
+                return BadRequest(new { message = "Kích thước file vượt quá 5MB." });
+            }
+
+            var uploadsFolder = Path.Combine(_environment.ContentRootPath, "Images");
+            if (!Directory.Exists(uploadsFolder))
+            {
+                Directory.CreateDirectory(uploadsFolder);
+            }
+
+            var fileName = $"product_{id}{extension}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+
+            if (!string.IsNullOrEmpty(product.Image))
+            {
+                var oldImagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
+                if (System.IO.File.Exists(oldImagePath))
+                {
+                    System.IO.File.Delete(oldImagePath);
+                    _logger.LogInformation("Deleted old image for product ID: {Id}", id);
+                }
+            }
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            product.Image = $"Images/{fileName}";
+            product.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Uploaded image for product ID: {Id}, path: {ImagePath}", id, product.Image);
+            return Ok(new { message = "Tải ảnh lên thành công.", imageUrl = $"/images/{fileName}" });
         }
     }
 }

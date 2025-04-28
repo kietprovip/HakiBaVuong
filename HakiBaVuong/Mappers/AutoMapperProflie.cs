@@ -28,7 +28,12 @@ namespace sexthu.Mappers
             .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Email))
             .ForMember(dest => dest.Password, opt => opt.Ignore()).ReverseMap();
             CreateMap<User, LoginDTO>().ReverseMap();
-
+            CreateMap<Cart, CartDTO>();
+            CreateMap<CartItem, CartItemDTO>()
+                .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
+                .ForMember(dest => dest.PriceSell, opt => opt.MapFrom(src => src.Product.PriceSell))
+                .ForMember(dest => dest.Image, opt => opt.MapFrom(src => src.Product.Image));
+            CreateMap<Payment, PaymentDTO>();
         }
     }
 }
