@@ -347,7 +347,6 @@ namespace HakiBaVuong.Controllers
                 _context.Inventories.Remove(inventory);
             }
 
-
             if (!string.IsNullOrEmpty(product.Image))
             {
                 var imagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
@@ -424,7 +423,6 @@ namespace HakiBaVuong.Controllers
             var fileName = $"product_{id}{extension}";
             var filePath = Path.Combine(uploadsFolder, fileName);
 
-
             if (!string.IsNullOrEmpty(product.Image))
             {
                 var oldImagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
@@ -440,12 +438,12 @@ namespace HakiBaVuong.Controllers
                 await file.CopyToAsync(stream);
             }
 
-            product.Image = $"Images/{fileName}";
+            product.Image = $"/images/{fileName}";
             product.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("Uploaded image for product ID: {Id}, path: {ImagePath}", id, product.Image);
-            return Ok(new { message = "Tải ảnh lên thành công.", imageUrl = $"/images/{fileName}" });
+            return Ok(new { message = "Tải ảnh lên thành công.", imageUrl = product.Image });
         }
     }
 }
