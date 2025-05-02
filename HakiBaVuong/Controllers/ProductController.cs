@@ -121,8 +121,25 @@ namespace HakiBaVuong.Controllers
             }
         }
 
+        [HttpGet("customer")]
+        [Authorize(Roles = "Customer")]
+        public async Task<ActionResult<IEnumerable<Product>>> GetAllForCustomer([FromQuery] int? brandId)
+        {
+            _logger.LogInformation("GetAllForCustomer products called with brandId: {BrandId}", brandId);
+
+            var query = _context.Products.AsQueryable();
+            if (brandId.HasValue)
+            {
+                query = query.Where(p => p.BrandId == brandId.Value);
+            }
+
+            var products = await query.Include(p => p.Brand).ToListAsync();
+            _logger.LogInformation("Retrieved {Count} products for customer", products.Count);
+            return Ok(products);
+        }
+
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize]
         public async Task<ActionResult<Product>> GetById(int id)
         {
             _logger.LogInformation("GetById called for product ID: {Id}", id);
@@ -134,23 +151,6 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogWarning("Product not found: {Id}", id);
                 return NotFound(new { message = "Sản phẩm không tồn tại." });
-            }
-
-            if (User.IsInRole("Staff"))
-            {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-                {
-                    _logger.LogWarning("Cannot determine userId from token.");
-                    return BadRequest(new { message = "Không thể xác định userId từ token." });
-                }
-
-                var brand = await _context.Brands.FindAsync(product.BrandId);
-                if (brand == null || brand.OwnerId != userId)
-                {
-                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, id);
-                    return Forbid();
-                }
             }
 
             return Ok(product);
