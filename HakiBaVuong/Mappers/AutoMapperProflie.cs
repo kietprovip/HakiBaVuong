@@ -6,7 +6,8 @@ namespace sexthu.Mappers
 {
     public class AutoMapperProflie : Profile
     {
-        public AutoMapperProflie() {
+        public AutoMapperProflie()
+        {
             CreateMap<User, UserDTO>().ReverseMap();
             CreateMap<Brand, BrandDTO>().ReverseMap();
             CreateMap<Permission, PermissionDTO>().ReverseMap();
@@ -33,7 +34,10 @@ namespace sexthu.Mappers
                 .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
                 .ForMember(dest => dest.PriceSell, opt => opt.MapFrom(src => src.Product.PriceSell))
                 .ForMember(dest => dest.Image, opt => opt.MapFrom(src => src.Product.Image));
+            CreateMap<Order, OrderDTO>();
+            CreateMap<OrderItem, OrderItemDTO>();
             CreateMap<Payment, PaymentDTO>();
+
         }
     }
 }

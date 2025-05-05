@@ -58,7 +58,8 @@ namespace HakiBaVuong.Controllers
                     ProductName = i.Product.Name,
                     PriceSell = i.Product.PriceSell,
                     Image = i.Product.Image,
-                    Quantity = i.Quantity
+                    Quantity = i.Quantity,
+                    BrandId = i.Product.BrandId
                 }).ToList()
             };
 
