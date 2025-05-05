@@ -34,10 +34,16 @@ namespace sexthu.Mappers
                 .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
                 .ForMember(dest => dest.PriceSell, opt => opt.MapFrom(src => src.Product.PriceSell))
                 .ForMember(dest => dest.Image, opt => opt.MapFrom(src => src.Product.Image));
-            CreateMap<Order, OrderDTO>();
-            CreateMap<OrderItem, OrderItemDTO>();
             CreateMap<Payment, PaymentDTO>();
-
+            CreateMap<PayOrderDTO, Payment>()
+                .ForMember(dest => dest.Method, opt => opt.Condition(src => !string.IsNullOrEmpty(src.PaymentMethod)));
+            CreateMap<UpdateOrderDTO, Order>()
+                .ForMember(dest => dest.Status, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Status)))
+                .ForMember(dest => dest.FullName, opt => opt.Condition(src => !string.IsNullOrEmpty(src.FullName)))
+                .ForMember(dest => dest.Phone, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Phone)))
+                .ForMember(dest => dest.Address, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Address)));
+            CreateMap<FilterOrdersDTO, Order>()
+                .ForMember(dest => dest.Status, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Status)));
         }
     }
 }

@@ -13,6 +13,8 @@ namespace HakiBaVuong.Models
 
         public int OwnerId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public string? BackgroundColor { get; set; } // Mã hex, ví dụ: #FFFFFF
+        public string? BackgroundImageUrl { get; set; }
 
         [ForeignKey("OwnerId")]
         public virtual User Owner { get; set; }

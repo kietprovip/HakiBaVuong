@@ -52,13 +52,11 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Giỏ hàng trống hoặc không tồn tại." });
             }
 
-
             if (cart.Items.Any(i => i.Product.BrandId != model.BrandId))
             {
                 _logger.LogWarning("Cart contains products from different brand for customer {CustomerId}", customerId);
                 return BadRequest(new { message = "Giỏ hàng chứa sản phẩm từ brand khác." });
             }
-
 
             foreach (var item in cart.Items)
             {
@@ -69,7 +67,6 @@ namespace HakiBaVuong.Controllers
                     return BadRequest(new { message = $"Sản phẩm {item.Product.Name} không đủ tồn kho." });
                 }
             }
-
 
             var order = new Order
             {
@@ -94,7 +91,6 @@ namespace HakiBaVuong.Controllers
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-
             var payment = new Payment
             {
                 OrderId = order.OrderId,
@@ -107,26 +103,7 @@ namespace HakiBaVuong.Controllers
             _context.Payments.Add(payment);
             await _context.SaveChangesAsync();
 
-
             order.PaymentId = payment.PaymentId;
-
-
-            payment.Status = "Completed";
-            order.Status = "Completed";
-            order.UpdatedAt = DateTime.UtcNow;
-
-
-            foreach (var item in cart.Items)
-            {
-                var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId);
-                inventory.StockQuantity -= item.Quantity;
-                inventory.LastUpdated = DateTime.UtcNow;
-                _context.Inventories.Update(inventory);
-            }
-
-
-            _context.CartItems.RemoveRange(cart.Items);
-            _context.Carts.Remove(cart);
             await _context.SaveChangesAsync();
 
             var orderDto = new OrderDTO
@@ -219,38 +196,41 @@ namespace HakiBaVuong.Controllers
             return Ok(orderDto);
         }
 
-        [HttpGet("brand/{brandId}")]
-        [Authorize(Roles = "Admin,Staff")]
-        public async Task<ActionResult<IEnumerable<OrderDTO>>> GetOrdersByBrand(int brandId)
+        [HttpGet("customer")]
+        public async Task<ActionResult<IEnumerable<OrderDTO>>> GetCustomerOrders([FromQuery] FilterOrdersDTO filter)
         {
-            _logger.LogInformation("GetOrdersByBrand called for brand {BrandId}", brandId);
+            _logger.LogInformation("GetCustomerOrders called");
 
-            var userId = GetUserId();
-            if (userId == null)
+            var customerId = GetCustomerId();
+            if (customerId == null)
             {
-                _logger.LogWarning("Invalid userId from token");
+                _logger.LogWarning("Invalid customerId from token");
                 return Unauthorized(new { message = "Token không hợp lệ." });
             }
 
-            var brand = await _context.Brands.FindAsync(brandId);
-            if (brand == null)
-            {
-                _logger.LogWarning("Brand not found: {BrandId}", brandId);
-                return BadRequest(new { message = "Brand không tồn tại." });
-            }
-
-            if (User.IsInRole("Staff") && brand.OwnerId != userId)
-            {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, brandId);
-                return Forbid();
-            }
-
-            var orders = await _context.Orders
-                .Where(o => o.BrandId == brandId)
+            var query = _context.Orders
+                .Where(o => o.CustomerId == customerId)
                 .Include(o => o.OrderItems)
                 .ThenInclude(i => i.Product)
                 .Include(o => o.Payment)
-                .ToListAsync();
+                .AsQueryable();
+
+            if (!string.IsNullOrEmpty(filter.Status))
+            {
+                query = query.Where(o => o.Status == filter.Status);
+            }
+
+            if (filter.StartDate.HasValue)
+            {
+                query = query.Where(o => o.CreatedAt >= filter.StartDate.Value);
+            }
+
+            if (filter.EndDate.HasValue)
+            {
+                query = query.Where(o => o.CreatedAt <= filter.EndDate.Value);
+            }
+
+            var orders = await query.ToListAsync();
 
             var orderDtos = orders.Select(o => new OrderDTO
             {
@@ -281,8 +261,145 @@ namespace HakiBaVuong.Controllers
                 } : null
             }).ToList();
 
-            _logger.LogInformation("Retrieved {Count} orders for brand {BrandId}", orders.Count, brandId);
+            _logger.LogInformation("Retrieved {Count} orders for customer {CustomerId}", orders.Count, customerId);
             return Ok(orderDtos);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateOrder(int id, [FromBody] UpdateOrderDTO model)
+        {
+            _logger.LogInformation("UpdateOrder called for order {OrderId}", id);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.Payment)
+                .Include(o => o.OrderItems)
+                .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
+
+            if (order == null)
+            {
+                _logger.LogWarning("Order not found: {OrderId}", id);
+                return NotFound(new { message = "Đơn hàng không tồn tại." });
+            }
+
+            if (order.Status != "Pending")
+            {
+                _logger.LogWarning("Order {OrderId} cannot be updated by customer, status: {Status}", id, order.Status);
+                return BadRequest(new { message = "Chỉ có thể cập nhật đơn hàng ở trạng thái Pending." });
+            }
+
+            if (!string.IsNullOrEmpty(model.Status) && model.Status != "Cancelled")
+            {
+                _logger.LogWarning("Customer {CustomerId} can only cancel order {OrderId}", customerId, id);
+                return BadRequest(new { message = "Khách hàng chỉ có thể hủy đơn hàng." });
+            }
+
+            if (!string.IsNullOrEmpty(model.FullName)) order.FullName = model.FullName;
+            if (!string.IsNullOrEmpty(model.Phone)) order.Phone = model.Phone;
+            if (!string.IsNullOrEmpty(model.Address)) order.Address = model.Address;
+            if (!string.IsNullOrEmpty(model.Status))
+            {
+                order.Status = model.Status;
+                if (order.Payment != null && model.Status == "Cancelled")
+                {
+                    order.Payment.Status = "Cancelled";
+                }
+            }
+
+            order.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            var orderDto = new OrderDTO
+            {
+                OrderId = order.OrderId,
+                BrandId = order.BrandId,
+                CustomerId = order.CustomerId,
+                FullName = order.FullName,
+                Phone = order.Phone,
+                Address = order.Address,
+                Status = order.Status,
+                TotalAmount = order.TotalAmount,
+                CreatedAt = order.CreatedAt,
+                OrderItems = order.OrderItems.Select(i => new OrderItemDTO
+                {
+                    ItemId = i.ItemId,
+                    OrderId = i.OrderId,
+                    ProductId = i.ProductId,
+                    ProductName = i.ProductName,
+                    Quantity = i.Quantity,
+                    Price = i.Price
+                }).ToList(),
+                Payment = order.Payment != null ? new PaymentDTO
+                {
+                    PaymentId = order.Payment.PaymentId,
+                    Amount = order.Payment.Amount,
+                    Method = order.Payment.Method,
+                    Status = order.Payment.Status
+                } : null
+            };
+
+            _logger.LogInformation("Updated order {OrderId} by customer {CustomerId}", id, customerId);
+            return Ok(orderDto);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteOrder(int id)
+        {
+            _logger.LogInformation("DeleteOrder called for order {OrderId}", id);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                .Include(o => o.Payment)
+                .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
+
+            if (order == null)
+            {
+                _logger.LogWarning("Order not found: {OrderId}", id);
+                return NotFound(new { message = "Đơn hàng không tồn tại." });
+            }
+
+            if (order.Status != "Pending")
+            {
+                _logger.LogWarning("Order {OrderId} cannot be deleted, status: {Status}", id, order.Status);
+                return BadRequest(new { message = "Chỉ có thể xóa đơn hàng ở trạng thái Pending." });
+            }
+
+            foreach (var item in order.OrderItems)
+            {
+                if (item.ProductId.HasValue)
+                {
+                    var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId.Value);
+                    if (inventory != null)
+                    {
+                        inventory.StockQuantity += item.Quantity;
+                        inventory.LastUpdated = DateTime.UtcNow;
+                        _context.Inventories.Update(inventory);
+                    }
+                }
+            }
+
+            if (order.Payment != null)
+            {
+                _context.Payments.Remove(order.Payment);
+            }
+            _context.Orders.Remove(order);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Deleted order {OrderId} by customer {CustomerId}", id, customerId);
+            return Ok(new { message = "Xóa đơn hàng thành công." });
         }
 
         private int? GetCustomerId()

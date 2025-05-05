@@ -7,5 +7,7 @@ namespace HakiBaVuong.DTOs
     {
         public string Name { get; set; }
         public int OwnerId { get; set; }
+        public string? BackgroundColor { get; set; }
+        public string? BackgroundImageUrl { get; set; }
     }
 }
