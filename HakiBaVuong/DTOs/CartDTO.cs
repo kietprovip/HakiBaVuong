@@ -16,5 +16,6 @@
         public string Image { get; set; }
         public int Quantity { get; set; }
         public int BrandId { get; set; }
+        public string BrandName { get; set; } // Thêm BrandName để hiển thị trên giao diện
     }
 }

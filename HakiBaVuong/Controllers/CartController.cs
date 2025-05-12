@@ -37,6 +37,7 @@ namespace HakiBaVuong.Controllers
             var cart = await _context.Carts
                 .Include(c => c.Items)
                 .ThenInclude(i => i.Product)
+                .ThenInclude(p => p.Brand) // Include Brand để lấy BrandName
                 .FirstOrDefaultAsync(c => c.CustomerId == customerId);
 
             if (cart == null)
@@ -59,7 +60,8 @@ namespace HakiBaVuong.Controllers
                     PriceSell = i.Product.PriceSell,
                     Image = i.Product.Image,
                     Quantity = i.Quantity,
-                    BrandId = i.Product.BrandId
+                    BrandId = i.Product.BrandId,
+                    BrandName = i.Product.Brand?.Name ?? "Thương hiệu không xác định" // Thêm BrandName
                 }).ToList()
             };
 
