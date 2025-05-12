@@ -26,7 +26,7 @@ namespace HakiBaVuong.Controllers
 
         [HttpGet]
         [Authorize(Roles = "Admin,Staff")]
-        public async Task<ActionResult<IEnumerable<BrandDTO>>> GetAll()
+        public async Task<ActionResult<IEnumerable<Brand>>> GetAll()
         {
             _logger.LogInformation("GetAll brands called");
 
@@ -48,13 +48,8 @@ namespace HakiBaVuong.Controllers
             }
 
             var brands = await query
-                .Select(b => new BrandDTO
-                {
-                    Name = b.Name,
-                    OwnerId = b.OwnerId,
-                    BackgroundColor = b.BackgroundColor,
-                    BackgroundImageUrl = b.BackgroundImageUrl
-                })
+                .Include(b => b.Owner)
+                .Include(b => b.Products)
                 .ToListAsync();
 
             _logger.LogInformation("Retrieved {Count} brands", brands.Count);
@@ -63,20 +58,14 @@ namespace HakiBaVuong.Controllers
 
         [HttpGet("{id}")]
         [Authorize(Roles = "Admin,Staff")]
-        public async Task<ActionResult<BrandDTO>> GetById(int id)
+        public async Task<ActionResult<Brand>> GetById(int id)
         {
             _logger.LogInformation("GetById called for brand {BrandId}", id);
 
             var brand = await _context.Brands
-                .Where(b => b.BrandId == id)
-                .Select(b => new BrandDTO
-                {
-                    Name = b.Name,
-                    OwnerId = b.OwnerId,
-                    BackgroundColor = b.BackgroundColor,
-                    BackgroundImageUrl = b.BackgroundImageUrl
-                })
-                .FirstOrDefaultAsync();
+                .Include(b => b.Owner)
+                .Include(b => b.Products)
+                .FirstOrDefaultAsync(b => b.BrandId == id);
 
             if (brand == null)
             {
@@ -114,20 +103,16 @@ namespace HakiBaVuong.Controllers
             {
                 Name = brandDto.Name,
                 OwnerId = User.IsInRole("Admin") ? brandDto.OwnerId : userId.Value,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                BackgroundColor = brandDto.BackgroundColor,
+                BackgroundImageUrl = brandDto.BackgroundImageUrl
             };
 
             _context.Brands.Add(brand);
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("Created brand {BrandId}", brand.BrandId);
-            return CreatedAtAction(nameof(GetById), new { id = brand.BrandId }, new BrandDTO
-            {
-                Name = brand.Name,
-                OwnerId = brand.OwnerId,
-                BackgroundColor = brand.BackgroundColor,
-                BackgroundImageUrl = brand.BackgroundImageUrl
-            });
+            return CreatedAtAction(nameof(GetById), new { id = brand.BrandId }, brand);
         }
 
         [HttpPut("{id}")]
@@ -209,7 +194,6 @@ namespace HakiBaVuong.Controllers
                 return Forbid();
             }
 
- 
             if (!string.IsNullOrEmpty(model.BackgroundColor))
             {
                 if (!IsValidHexColor(model.BackgroundColor))
@@ -219,7 +203,6 @@ namespace HakiBaVuong.Controllers
                 }
                 brand.BackgroundColor = model.BackgroundColor;
             }
-
 
             if (model.BackgroundImage != null)
             {
@@ -247,7 +230,6 @@ namespace HakiBaVuong.Controllers
                 var fileName = $"brand_{id}{extension}";
                 var filePath = Path.Combine(uploadsFolder, fileName);
 
-
                 if (!string.IsNullOrEmpty(brand.BackgroundImageUrl))
                 {
                     var oldImagePath = Path.Combine(Directory.GetCurrentDirectory(), brand.BackgroundImageUrl.TrimStart('/'));
@@ -258,12 +240,10 @@ namespace HakiBaVuong.Controllers
                     }
                 }
 
-  
                 using (var stream = new FileStream(filePath, FileMode.Create))
                 {
                     await model.BackgroundImage.CopyToAsync(stream);
                 }
-
 
                 brand.BackgroundImageUrl = $"/images/brands/{fileName}";
             }
@@ -272,13 +252,7 @@ namespace HakiBaVuong.Controllers
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("Updated background for brand {BrandId}", id);
-            return Ok(new BrandDTO
-            {
-                Name = brand.Name,
-                OwnerId = brand.OwnerId,
-                BackgroundColor = brand.BackgroundColor,
-                BackgroundImageUrl = brand.BackgroundImageUrl
-            });
+            return Ok(brand);
         }
 
         [HttpDelete("{id}/background")]
@@ -307,7 +281,6 @@ namespace HakiBaVuong.Controllers
                 return Forbid();
             }
 
-
             if (!string.IsNullOrEmpty(brand.BackgroundImageUrl))
             {
                 var imagePath = Path.Combine(Directory.GetCurrentDirectory(), brand.BackgroundImageUrl.TrimStart('/'));
@@ -319,20 +292,13 @@ namespace HakiBaVuong.Controllers
                 brand.BackgroundImageUrl = null;
             }
 
-
             brand.BackgroundColor = "#FFFFFF";
 
             _context.Brands.Update(brand);
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("Reset background for brand {BrandId}", id);
-            return Ok(new BrandDTO
-            {
-                Name = brand.Name,
-                OwnerId = brand.OwnerId,
-                BackgroundColor = brand.BackgroundColor,
-                BackgroundImageUrl = brand.BackgroundImageUrl
-            });
+            return Ok(brand);
         }
 
         private int? GetUserId()
