@@ -80,16 +80,15 @@ namespace HakiBaVuong.Data
 
             modelBuilder.Entity<Order>()
                 .HasOne(o => o.Customer)
-                .WithMany()
+                .WithMany(c => c.Orders)
                 .HasForeignKey(o => o.CustomerId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<OrderItem>()
                 .HasOne(oi => oi.Order)
                 .WithMany()
                 .HasForeignKey(oi => oi.OrderId)
                 .OnDelete(DeleteBehavior.NoAction);
-
 
             modelBuilder.Entity<OrderItem>()
                 .HasOne(oi => oi.Product)

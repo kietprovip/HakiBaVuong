@@ -54,9 +54,14 @@ namespace HakiBaVuong.Controllers
                 .Include(o => o.Payment)
                 .AsQueryable();
 
-            if (!string.IsNullOrEmpty(filter.Status))
+            if (!string.IsNullOrEmpty(filter.PaymentStatus))
             {
-                query = query.Where(o => o.Status == filter.Status);
+                query = query.Where(o => o.PaymentStatus == filter.PaymentStatus);
+            }
+
+            if (!string.IsNullOrEmpty(filter.DeliveryStatus))
+            {
+                query = query.Where(o => o.DeliveryStatus == filter.DeliveryStatus);
             }
 
             if (filter.StartDate.HasValue)
@@ -79,9 +84,11 @@ namespace HakiBaVuong.Controllers
                 FullName = o.FullName,
                 Phone = o.Phone,
                 Address = o.Address,
-                Status = o.Status,
+                PaymentStatus = o.PaymentStatus,
+                DeliveryStatus = o.DeliveryStatus,
                 TotalAmount = o.TotalAmount,
                 CreatedAt = o.CreatedAt,
+                EstimatedDeliveryDate = o.EstimatedDeliveryDate,
                 OrderItems = o.OrderItems.Select(i => new OrderItemDTO
                 {
                     ItemId = i.ItemId,
@@ -135,10 +142,10 @@ namespace HakiBaVuong.Controllers
                 return Forbid();
             }
 
-            if (order.Status != "Pending")
+            if (order.PaymentStatus != "Pending")
             {
-                _logger.LogWarning("Order {OrderId} cannot be paid, status: {Status}", id, order.Status);
-                return BadRequest(new { message = "Đơn hàng không ở trạng thái Pending." });
+                _logger.LogWarning("Order {OrderId} cannot be paid, paymentStatus: {PaymentStatus}", id, order.PaymentStatus);
+                return BadRequest(new { message = "Đơn hàng không ở trạng thái thanh toán Pending." });
             }
 
             if (order.Payment == null)
@@ -165,7 +172,8 @@ namespace HakiBaVuong.Controllers
             }
 
             order.Payment.Status = model.PaymentMethod == "BankCard" ? "Completed" : "Pending";
-            order.Status = model.PaymentMethod == "BankCard" ? "Completed" : "Pending";
+            order.PaymentStatus = model.PaymentMethod == "BankCard" ? "Completed" : "Pending";
+            order.DeliveryStatus = model.PaymentMethod == "BankCard" ? "Processing" : "Pending";
             order.UpdatedAt = DateTime.UtcNow;
 
             if (model.PaymentMethod == "BankCard")
@@ -206,9 +214,11 @@ namespace HakiBaVuong.Controllers
                 FullName = order.FullName,
                 Phone = order.Phone,
                 Address = order.Address,
-                Status = order.Status,
+                PaymentStatus = order.PaymentStatus,
+                DeliveryStatus = order.DeliveryStatus,
                 TotalAmount = order.TotalAmount,
                 CreatedAt = order.CreatedAt,
+                EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                 OrderItems = order.OrderItems.Select(i => new OrderItemDTO
                 {
                     ItemId = i.ItemId,
@@ -261,30 +271,37 @@ namespace HakiBaVuong.Controllers
                 return Forbid();
             }
 
-            var validStatuses = new[] { "Pending", "Processing", "Completed", "Shipped", "Delivered", "Cancelled" };
-            if (!string.IsNullOrEmpty(model.Status) && !validStatuses.Contains(model.Status))
+            var validPaymentStatuses = new[] { "Pending", "Completed", "Cancelled" };
+            var validDeliveryStatuses = new[] { "Pending", "Processing", "Shipped", "Delivered", "Cancelled" };
+
+            if (!string.IsNullOrEmpty(model.PaymentStatus) && !validPaymentStatuses.Contains(model.PaymentStatus))
             {
-                _logger.LogWarning("Invalid status: {Status}", model.Status);
-                return BadRequest(new { message = "Trạng thái không hợp lệ." });
+                _logger.LogWarning("Invalid payment status: {PaymentStatus}", model.PaymentStatus);
+                return BadRequest(new { message = "Trạng thái thanh toán không hợp lệ." });
+            }
+
+            if (!string.IsNullOrEmpty(model.DeliveryStatus) && !validDeliveryStatuses.Contains(model.DeliveryStatus))
+            {
+                _logger.LogWarning("Invalid delivery status: {DeliveryStatus}", model.DeliveryStatus);
+                return BadRequest(new { message = "Trạng thái giao hàng không hợp lệ." });
             }
 
             if (!string.IsNullOrEmpty(model.FullName)) order.FullName = model.FullName;
             if (!string.IsNullOrEmpty(model.Phone)) order.Phone = model.Phone;
             if (!string.IsNullOrEmpty(model.Address)) order.Address = model.Address;
-            if (!string.IsNullOrEmpty(model.Status))
+
+            if (!string.IsNullOrEmpty(model.PaymentStatus))
             {
-                order.Status = model.Status;
+                order.PaymentStatus = model.PaymentStatus;
                 if (order.Payment != null)
                 {
-                    if (model.Status == "Cancelled")
-                    {
-                        order.Payment.Status = "Cancelled";
-                    }
-                    else if (model.Status == "Completed")
-                    {
-                        order.Payment.Status = "Completed";
-                    }
+                    order.Payment.Status = model.PaymentStatus;
                 }
+            }
+
+            if (!string.IsNullOrEmpty(model.DeliveryStatus))
+            {
+                order.DeliveryStatus = model.DeliveryStatus;
             }
 
             order.UpdatedAt = DateTime.UtcNow;
@@ -298,9 +315,11 @@ namespace HakiBaVuong.Controllers
                 FullName = order.FullName,
                 Phone = order.Phone,
                 Address = order.Address,
-                Status = order.Status,
+                PaymentStatus = order.PaymentStatus,
+                DeliveryStatus = order.DeliveryStatus,
                 TotalAmount = order.TotalAmount,
                 CreatedAt = order.CreatedAt,
+                EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                 OrderItems = order.OrderItems.Select(i => new OrderItemDTO
                 {
                     ItemId = i.ItemId,
@@ -353,9 +372,9 @@ namespace HakiBaVuong.Controllers
                 return Forbid();
             }
 
-            if (order.Status != "Pending")
+            if (order.DeliveryStatus != "Pending")
             {
-                _logger.LogWarning("Order {OrderId} cannot be deleted, status: {Status}", id, order.Status);
+                _logger.LogWarning("Order {OrderId} cannot be deleted, deliveryStatus: {DeliveryStatus}", id, order.DeliveryStatus);
                 return BadRequest(new { message = "Chỉ có thể xóa đơn hàng ở trạng thái Pending." });
             }
 

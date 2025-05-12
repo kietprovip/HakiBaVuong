@@ -9,14 +9,17 @@ namespace HakiBaVuong.Models
         public int OrderId { get; set; }
 
         public int BrandId { get; set; }
-        public int? CustomerId { get; set; }
+        public int CustomerId { get; set; }
 
         public string FullName { get; set; }
         public string Phone { get; set; }
         public string Address { get; set; }
 
         [Required]
-        public string Status { get; set; }
+        public string PaymentStatus { get; set; } 
+
+        [Required]
+        public string DeliveryStatus { get; set; } 
 
         [Required]
         public decimal TotalAmount { get; set; }
@@ -25,6 +28,8 @@ namespace HakiBaVuong.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? EstimatedDeliveryDate { get; set; }
 
         [ForeignKey("BrandId")]
         public virtual Brand Brand { get; set; }
