@@ -175,32 +175,13 @@ namespace HakiBaVuong.Controllers
             order.Status = model.PaymentMethod == "BankCard" ? "Đã thanh toán" : "Chưa thanh toán";
             order.UpdatedAt = DateTime.UtcNow;
 
-            if (model.PaymentMethod == "BankCard")
+            var cart = await _context.Carts
+                .Include(c => c.Items)
+                .FirstOrDefaultAsync(c => c.CustomerId == order.CustomerId);
+            if (cart != null)
             {
-                foreach (var item in order.OrderItems)
-                {
-                    if (item.ProductId.HasValue)
-                    {
-                        var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId.Value);
-                        if (inventory == null || inventory.StockQuantity < item.Quantity)
-                        {
-                            _logger.LogWarning("Insufficient stock for product {ProductId} in order {OrderId}", item.ProductId, id);
-                            return BadRequest(new { message = $"Sản phẩm {item.ProductName} không đủ tồn kho." });
-                        }
-                        inventory.StockQuantity -= item.Quantity;
-                        inventory.LastUpdated = DateTime.UtcNow;
-                        _context.Inventories.Update(inventory);
-                    }
-                }
-
-                var cart = await _context.Carts
-                    .Include(c => c.Items)
-                    .FirstOrDefaultAsync(c => c.CustomerId == order.CustomerId);
-                if (cart != null)
-                {
-                    _context.CartItems.RemoveRange(cart.Items);
-                    _context.Carts.Remove(cart);
-                }
+                _context.CartItems.RemoveRange(cart.Items);
+                _context.Carts.Remove(cart);
             }
 
             await _context.SaveChangesAsync();

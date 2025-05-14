@@ -18,25 +18,20 @@ namespace sexthu.Mappers
             CreateMap<Product, ProductDTO>().ReverseMap();
             CreateMap<Inventory, InventoryDTO>().ReverseMap();
 
-            // Ánh xạ cho Order và OrderDTO
             CreateMap<Order, OrderDTO>()
                 .ForMember(dest => dest.OrderItems, opt => opt.MapFrom(src => src.OrderItems))
                 .ForMember(dest => dest.Payment, opt => opt.MapFrom(src => src.Payment))
                 .ReverseMap();
 
-            // Ánh xạ cho OrderItem và OrderItemDTO
             CreateMap<OrderItem, OrderItemDTO>().ReverseMap();
 
-            // Ánh xạ cho Payment và PaymentDTO
             CreateMap<Payment, PaymentDTO>().ReverseMap();
 
-            // Ánh xạ cho CreateOrderDTO sang Order
             CreateMap<CreateOrderDTO, Order>()
                 .ForMember(dest => dest.FullName, opt => opt.Condition(src => !string.IsNullOrEmpty(src.FullName)))
                 .ForMember(dest => dest.Phone, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Phone)))
                 .ForMember(dest => dest.Address, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Address)));
 
-            // Ánh xạ cho UpdateOrderDTO sang Order
             CreateMap<UpdateOrderDTO, Order>()
                 .ForMember(dest => dest.Status, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Status)))
                 .ForMember(dest => dest.DeliveryStatus, opt => opt.Condition(src => !string.IsNullOrEmpty(src.DeliveryStatus)))
@@ -45,7 +40,6 @@ namespace sexthu.Mappers
                 .ForMember(dest => dest.Phone, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Phone)))
                 .ForMember(dest => dest.Address, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Address)));
 
-            // Ánh xạ cho FilterOrdersDTO sang Order
             CreateMap<FilterOrdersDTO, Order>()
                 .ForMember(dest => dest.Status, opt => opt.Condition(src => !string.IsNullOrEmpty(src.Status)))
                 .ForMember(dest => dest.DeliveryStatus, opt => opt.Condition(src => !string.IsNullOrEmpty(src.DeliveryStatus)))

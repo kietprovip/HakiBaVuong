@@ -36,7 +36,6 @@ namespace HakiBaVuong.Controllers
                 return Unauthorized(new { message = "Token không hợp lệ." });
             }
 
-            // Nếu có AddressId, lấy thông tin từ CustomerAddress
             if (model.AddressId.HasValue)
             {
                 var address = await _context.CustomerAddresses
@@ -52,7 +51,6 @@ namespace HakiBaVuong.Controllers
             }
             else
             {
-                // Nếu không có AddressId, kiểm tra thông tin nhập tay
                 if (string.IsNullOrWhiteSpace(model.FullName) || string.IsNullOrWhiteSpace(model.Phone) || string.IsNullOrWhiteSpace(model.Address))
                 {
                     _logger.LogWarning("Invalid input data: FullName, Phone, or Address is empty");
@@ -147,29 +145,27 @@ namespace HakiBaVuong.Controllers
 
                 order.PaymentId = payment.PaymentId;
 
-                if (model.PaymentMethod == "BankCard")
+                // Trừ số lượng tồn kho ngay khi đơn hàng được tạo
+                foreach (var item in cartItemsForBrand)
                 {
-                    foreach (var item in cartItemsForBrand)
+                    var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId);
+                    if (inventory == null)
                     {
-                        var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId);
-                        if (inventory == null)
-                        {
-                            _logger.LogWarning("Inventory not found for product {ProductId}", item.ProductId);
-                            throw new Exception($"Inventory not found for product {item.ProductId}");
-                        }
-                        inventory.StockQuantity -= item.Quantity;
-                        inventory.LastUpdated = DateTime.UtcNow;
-                        _context.Inventories.Update(inventory);
+                        _logger.LogWarning("Inventory not found for product {ProductId}", item.ProductId);
+                        throw new Exception($"Inventory not found for product {item.ProductId}");
                     }
+                    inventory.StockQuantity -= item.Quantity;
+                    inventory.LastUpdated = DateTime.UtcNow;
+                    _context.Inventories.Update(inventory);
+                }
 
-                    _context.CartItems.RemoveRange(cartItemsForBrand);
+                _context.CartItems.RemoveRange(cartItemsForBrand);
+                await _context.SaveChangesAsync();
+
+                if (!cart.Items.Any())
+                {
+                    _context.Carts.Remove(cart);
                     await _context.SaveChangesAsync();
-
-                    if (!cart.Items.Any())
-                    {
-                        _context.Carts.Remove(cart);
-                        await _context.SaveChangesAsync();
-                    }
                 }
 
                 await transaction.CommitAsync();

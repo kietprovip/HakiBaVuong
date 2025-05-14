@@ -39,7 +39,7 @@ namespace HakiBaVuong.Controllers
                 .Where(a => a.CustomerId == customerId.Value)
                 .Select(a => new CustomerAddressDTO
                 {
-                    AddressId = a.AddressId, // Thêm trường AddressId
+                    AddressId = a.AddressId,
                     CustomerId = a.CustomerId,
                     FullName = a.FullName,
                     Phone = a.Phone,
@@ -68,7 +68,7 @@ namespace HakiBaVuong.Controllers
                 .Where(a => a.AddressId == id && a.CustomerId == customerId.Value)
                 .Select(a => new CustomerAddressDTO
                 {
-                    AddressId = a.AddressId, // Thêm trường AddressId
+                    AddressId = a.AddressId,
                     CustomerId = a.CustomerId,
                     FullName = a.FullName,
                     Phone = a.Phone,
