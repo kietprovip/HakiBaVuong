@@ -26,8 +26,8 @@ namespace HakiBaVuong.Controllers
         [HttpPost("create")]
         public async Task<ActionResult<OrderDTO>> CreateOrder([FromBody] CreateOrderDTO model)
         {
-            _logger.LogInformation("CreateOrder called with paymentMethod {PaymentMethod}, fullName {FullName}, phone {Phone}, address {Address}, brandId {BrandId}",
-                model.PaymentMethod, model.FullName, model.Phone, model.Address, model.BrandId);
+            _logger.LogInformation("CreateOrder called with paymentMethod {PaymentMethod}, fullName {FullName}, phone {Phone}, address {Address}, brandId {BrandId}, addressId {AddressId}",
+                model.PaymentMethod, model.FullName, model.Phone, model.Address, model.BrandId, model.AddressId);
 
             var customerId = GetCustomerId();
             if (customerId == null)
@@ -36,10 +36,28 @@ namespace HakiBaVuong.Controllers
                 return Unauthorized(new { message = "Token không hợp lệ." });
             }
 
-            if (string.IsNullOrWhiteSpace(model.FullName) || string.IsNullOrWhiteSpace(model.Phone) || string.IsNullOrWhiteSpace(model.Address))
+            // Nếu có AddressId, lấy thông tin từ CustomerAddress
+            if (model.AddressId.HasValue)
             {
-                _logger.LogWarning("Invalid input data: FullName, Phone, or Address is empty");
-                return BadRequest(new { message = "Vui lòng điền đầy đủ thông tin thanh toán." });
+                var address = await _context.CustomerAddresses
+                    .FirstOrDefaultAsync(a => a.AddressId == model.AddressId.Value && a.CustomerId == customerId);
+                if (address == null)
+                {
+                    _logger.LogWarning("Address not found: {AddressId}", model.AddressId);
+                    return BadRequest(new { message = "Địa chỉ không tồn tại." });
+                }
+                model.FullName = address.FullName;
+                model.Phone = address.Phone;
+                model.Address = address.Address;
+            }
+            else
+            {
+                // Nếu không có AddressId, kiểm tra thông tin nhập tay
+                if (string.IsNullOrWhiteSpace(model.FullName) || string.IsNullOrWhiteSpace(model.Phone) || string.IsNullOrWhiteSpace(model.Address))
+                {
+                    _logger.LogWarning("Invalid input data: FullName, Phone, or Address is empty");
+                    return BadRequest(new { message = "Vui lòng điền đầy đủ thông tin thanh toán." });
+                }
             }
 
             var cart = await _context.Carts
@@ -52,7 +70,6 @@ namespace HakiBaVuong.Controllers
                 _logger.LogWarning("Cart is empty or not found for customer {CustomerId}", customerId);
                 return BadRequest(new { message = "Giỏ hàng trống hoặc không tồn tại." });
             }
-
 
             var cartItemsForBrand = cart.Items.Where(i => i.Product.BrandId == model.BrandId).ToList();
             if (!cartItemsForBrand.Any())
@@ -88,7 +105,6 @@ namespace HakiBaVuong.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-
                 var order = new Order
                 {
                     BrandId = model.BrandId,
@@ -145,10 +161,8 @@ namespace HakiBaVuong.Controllers
                         _context.Inventories.Update(inventory);
                     }
 
-
                     _context.CartItems.RemoveRange(cartItemsForBrand);
                     await _context.SaveChangesAsync();
-
 
                     if (!cart.Items.Any())
                     {
