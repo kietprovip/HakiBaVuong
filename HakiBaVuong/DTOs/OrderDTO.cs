@@ -9,6 +9,8 @@
         public string Phone { get; set; }
         public string Address { get; set; }
         public string Status { get; set; }
+        public string DeliveryStatus { get; set; }
+        public DateTime? EstimatedDeliveryDate { get; set; }
         public decimal TotalAmount { get; set; }
         public DateTime CreatedAt { get; set; }
         public List<OrderItemDTO> OrderItems { get; set; }

@@ -23,6 +23,9 @@ namespace HakiBaVuong.Models
 
         public int? PaymentId { get; set; }
 
+        public string DeliveryStatus { get; set; }
+        public DateTime? EstimatedDeliveryDate { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

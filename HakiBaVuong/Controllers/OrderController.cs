@@ -112,7 +112,8 @@ namespace HakiBaVuong.Controllers
                     FullName = model.FullName,
                     Phone = model.Phone,
                     Address = model.Address,
-                    Status = model.PaymentMethod == "BankCard" ? "Completed" : "Pending",
+                    Status = model.PaymentMethod == "BankCard" ? "Đã thanh toán" : "Chưa thanh toán",
+                    DeliveryStatus = "Đợi giao hàng",
                     TotalAmount = cartItemsForBrand.Sum(i => i.Quantity * i.Product.PriceSell),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -182,6 +183,8 @@ namespace HakiBaVuong.Controllers
                     Phone = order.Phone,
                     Address = order.Address,
                     Status = order.Status,
+                    DeliveryStatus = order.DeliveryStatus,
+                    EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                     TotalAmount = order.TotalAmount,
                     CreatedAt = order.CreatedAt,
                     OrderItems = orderItems.Select(i => new OrderItemDTO
@@ -247,6 +250,8 @@ namespace HakiBaVuong.Controllers
                 Phone = order.Phone,
                 Address = order.Address,
                 Status = order.Status,
+                DeliveryStatus = order.DeliveryStatus,
+                EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                 TotalAmount = order.TotalAmount,
                 CreatedAt = order.CreatedAt,
                 OrderItems = order.OrderItems.Select(i => new OrderItemDTO
@@ -313,6 +318,8 @@ namespace HakiBaVuong.Controllers
                 Phone = o.Phone,
                 Address = o.Address,
                 Status = o.Status,
+                DeliveryStatus = o.DeliveryStatus,
+                EstimatedDeliveryDate = o.EstimatedDeliveryDate,
                 TotalAmount = o.TotalAmount,
                 CreatedAt = o.CreatedAt,
                 OrderItems = o.OrderItems.Select(i => new OrderItemDTO
@@ -361,6 +368,11 @@ namespace HakiBaVuong.Controllers
                 query = query.Where(o => o.Status == filter.Status);
             }
 
+            if (!string.IsNullOrEmpty(filter.DeliveryStatus))
+            {
+                query = query.Where(o => o.DeliveryStatus == filter.DeliveryStatus);
+            }
+
             if (filter.StartDate.HasValue)
             {
                 query = query.Where(o => o.CreatedAt >= filter.StartDate.Value);
@@ -382,6 +394,8 @@ namespace HakiBaVuong.Controllers
                 Phone = o.Phone,
                 Address = o.Address,
                 Status = o.Status,
+                DeliveryStatus = o.DeliveryStatus,
+                EstimatedDeliveryDate = o.EstimatedDeliveryDate,
                 TotalAmount = o.TotalAmount,
                 CreatedAt = o.CreatedAt,
                 OrderItems = o.OrderItems.Select(i => new OrderItemDTO
@@ -429,16 +443,17 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Đơn hàng không tồn tại." });
             }
 
-            if (order.Status != "Pending")
+            if (order.Status != "Chưa thanh toán")
             {
                 _logger.LogWarning("Order {OrderId} cannot be updated by customer, status: {Status}", id, order.Status);
-                return BadRequest(new { message = "Chỉ có thể cập nhật đơn hàng ở trạng thái Pending." });
+                return BadRequest(new { message = "Chỉ có thể cập nhật đơn hàng ở trạng thái Chưa thanh toán." });
             }
 
-            if (!string.IsNullOrEmpty(model.Status) && model.Status != "Cancelled")
+            var validStatuses = new[] { "Chưa thanh toán", "Đã thanh toán", "Huỷ đơn hàng" };
+            if (!string.IsNullOrEmpty(model.Status) && !validStatuses.Contains(model.Status))
             {
-                _logger.LogWarning("Customer {CustomerId} can only cancel order {OrderId}", customerId, id);
-                return BadRequest(new { message = "Khách hàng chỉ có thể hủy đơn hàng." });
+                _logger.LogWarning("Invalid status: {Status}", model.Status);
+                return BadRequest(new { message = "Trạng thái không hợp lệ." });
             }
 
             if (!string.IsNullOrEmpty(model.FullName)) order.FullName = model.FullName;
@@ -447,7 +462,7 @@ namespace HakiBaVuong.Controllers
             if (!string.IsNullOrEmpty(model.Status))
             {
                 order.Status = model.Status;
-                if (order.Payment != null && model.Status == "Cancelled")
+                if (order.Payment != null && model.Status == "Huỷ đơn hàng")
                 {
                     order.Payment.Status = "Cancelled";
                 }
@@ -465,6 +480,8 @@ namespace HakiBaVuong.Controllers
                 Phone = order.Phone,
                 Address = order.Address,
                 Status = order.Status,
+                DeliveryStatus = order.DeliveryStatus,
+                EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                 TotalAmount = order.TotalAmount,
                 CreatedAt = order.CreatedAt,
                 OrderItems = order.OrderItems.Select(i => new OrderItemDTO
@@ -512,10 +529,10 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Đơn hàng không tồn tại." });
             }
 
-            if (order.Status != "Pending")
+            if (order.Status != "Chưa thanh toán")
             {
                 _logger.LogWarning("Order {OrderId} cannot be deleted, status: {Status}", id, order.Status);
-                return BadRequest(new { message = "Chỉ có thể xóa đơn hàng ở trạng thái Pending." });
+                return BadRequest(new { message = "Chỉ có thể xóa đơn hàng ở trạng thái Chưa thanh toán." });
             }
 
             foreach (var item in order.OrderItems)
