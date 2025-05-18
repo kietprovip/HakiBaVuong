@@ -23,6 +23,7 @@ namespace HakiBaVuong.Migrations
                 table: "Orders",
                 type: "datetime2",
                 nullable: true);
+            
         }
 
         /// <inheritdoc />
@@ -35,6 +36,7 @@ namespace HakiBaVuong.Migrations
             migrationBuilder.DropColumn(
                 name: "EstimatedDeliveryDate",
                 table: "Orders");
+            
         }
     }
 }

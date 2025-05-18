@@ -43,8 +43,13 @@ namespace HakiBaVuong.Controllers
 
             if (User.IsInRole("Staff") && brand.OwnerId != userId)
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, brandId);
-                return Forbid();
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "ManageOrders");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId, brandId);
+                    return Forbid();
+                }
             }
 
             var query = _context.Orders
@@ -136,10 +141,21 @@ namespace HakiBaVuong.Controllers
             }
 
             var brand = await _context.Brands.FindAsync(order.BrandId);
-            if (brand == null || (User.IsInRole("Staff") && brand.OwnerId != userId))
+            if (brand == null)
             {
-                _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
-                return Forbid();
+                _logger.LogWarning("Brand not found for order {OrderId}", id);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "ManageOrders");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId, order.BrandId);
+                    return Forbid();
+                }
             }
 
             if (order.Status != "Chưa thanh toán")
@@ -245,10 +261,21 @@ namespace HakiBaVuong.Controllers
             }
 
             var brand = await _context.Brands.FindAsync(order.BrandId);
-            if (brand == null || (User.IsInRole("Staff") && brand.OwnerId != userId))
+            if (brand == null)
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
-                return Forbid();
+                _logger.LogWarning("Brand not found for order {OrderId}", id);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "ManageOrders");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId, order.BrandId);
+                    return Forbid();
+                }
             }
 
             var validStatuses = new[] { "Chưa thanh toán", "Đã thanh toán", "Huỷ đơn hàng" };
@@ -354,10 +381,21 @@ namespace HakiBaVuong.Controllers
             }
 
             var brand = await _context.Brands.FindAsync(order.BrandId);
-            if (brand == null || (User.IsInRole("Staff") && brand.OwnerId != userId))
+            if (brand == null)
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
-                return Forbid();
+                _logger.LogWarning("Brand not found for order {OrderId}", id);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "ManageOrders");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId, order.BrandId);
+                    return Forbid();
+                }
             }
 
             if (order.Status != "Chưa thanh toán")

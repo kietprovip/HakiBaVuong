@@ -199,6 +199,13 @@ namespace HakiBaVuong.Controllers
         {
             _logger.LogInformation("Create product called with name: {Name}, brandId: {BrandId}", productDto.Name, productDto.BrandId);
 
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                _logger.LogWarning("Cannot determine userId from token.");
+                return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
             if (productDto.PriceSell <= 0)
             {
                 _logger.LogWarning("Invalid PriceSell: {PriceSell}", productDto.PriceSell);
@@ -212,18 +219,13 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
             {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "AddProduct");
+                if (!hasPermission)
                 {
-                    _logger.LogWarning("Cannot determine userId from token.");
-                    return BadRequest(new { message = "Không thể xác định userId từ token." });
-                }
-
-                if (brand.OwnerId != userId)
-                {
-                    _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, productDto.BrandId);
+                    _logger.LogWarning("Staff user {UserId} does not have AddProduct permission for brand {BrandId}", userId, productDto.BrandId);
                     return Forbid();
                 }
             }
@@ -262,6 +264,13 @@ namespace HakiBaVuong.Controllers
         {
             _logger.LogInformation("Update product called for ID: {Id}", id);
 
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                _logger.LogWarning("Cannot determine userId from token.");
+                return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
             var product = await _context.Products.FindAsync(id);
             if (product == null)
             {
@@ -282,18 +291,13 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
             {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "AddProduct");
+                if (!hasPermission)
                 {
-                    _logger.LogWarning("Cannot determine userId from token.");
-                    return BadRequest(new { message = "Không thể xác định userId từ token." });
-                }
-
-                if (brand.OwnerId != userId)
-                {
-                    _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, productDto.BrandId);
+                    _logger.LogWarning("Staff user {UserId} does not have AddProduct permission for brand {BrandId}", userId, productDto.BrandId);
                     return Forbid();
                 }
             }
@@ -317,6 +321,13 @@ namespace HakiBaVuong.Controllers
         {
             _logger.LogInformation("Delete product called for ID: {Id}", id);
 
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                _logger.LogWarning("Cannot determine userId from token.");
+                return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
             var product = await _context.Products.FindAsync(id);
             if (product == null)
             {
@@ -324,19 +335,20 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Sản phẩm không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            var brand = await _context.Brands.FindAsync(product.BrandId);
+            if (brand == null)
             {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-                {
-                    _logger.LogWarning("Cannot determine userId from token.");
-                    return BadRequest(new { message = "Không thể xác định userId từ token." });
-                }
+                _logger.LogWarning("Brand not found for product {ProductId}", id);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
 
-                var brand = await _context.Brands.FindAsync(product.BrandId);
-                if (brand == null || brand.OwnerId != userId)
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "AddProduct");
+                if (!hasPermission)
                 {
-                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, id);
+                    _logger.LogWarning("Staff user {UserId} does not have AddProduct permission for product {ProductId}", userId, id);
                     return Forbid();
                 }
             }
@@ -369,6 +381,13 @@ namespace HakiBaVuong.Controllers
         {
             _logger.LogInformation("UploadImage called for product ID: {Id}", id);
 
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                _logger.LogWarning("Cannot determine userId from token.");
+                return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
             var product = await _context.Products.FindAsync(id);
             if (product == null)
             {
@@ -376,19 +395,20 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Sản phẩm không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            var brand = await _context.Brands.FindAsync(product.BrandId);
+            if (brand == null)
             {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-                {
-                    _logger.LogWarning("Cannot determine userId from token.");
-                    return BadRequest(new { message = "Không thể xác định userId từ token." });
-                }
+                _logger.LogWarning("Brand not found for product {ProductId}", id);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
 
-                var brand = await _context.Brands.FindAsync(product.BrandId);
-                if (brand == null || brand.OwnerId != userId)
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId && sp.Permission.Name == "UploadProductImage");
+                if (!hasPermission)
                 {
-                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, id);
+                    _logger.LogWarning("Staff user {UserId} does not have UploadProductImage permission for product {ProductId}", userId, id);
                     return Forbid();
                 }
             }

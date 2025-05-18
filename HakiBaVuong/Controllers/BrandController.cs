@@ -62,6 +62,13 @@ namespace HakiBaVuong.Controllers
         {
             _logger.LogInformation("GetById called for brand {BrandId}", id);
 
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
             var brand = await _context.Brands
                 .Include(b => b.Owner)
                 .Include(b => b.Products)
@@ -73,12 +80,13 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
             {
-                var userId = GetUserId();
-                if (!userId.HasValue || brand.OwnerId != userId.Value)
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == "ManageBrand");
+                if (!hasPermission)
                 {
-                    _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, id);
+                    _logger.LogWarning("Staff user {UserId} does not have ManageBrand permission for brand {BrandId}", userId.Value, id);
                     return Forbid();
                 }
             }
@@ -97,6 +105,17 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogWarning("Invalid userId from token");
                 return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
+            if (User.IsInRole("Staff") && brandDto.OwnerId != userId.Value)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == "ManageBrand");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageBrand permission to create brand", userId.Value);
+                    return Forbid();
+                }
             }
 
             var brand = new Brand
@@ -121,6 +140,13 @@ namespace HakiBaVuong.Controllers
         {
             _logger.LogInformation("Update called for brand {BrandId}", id);
 
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return BadRequest(new { message = "Không thể xác định userId từ token." });
+            }
+
             var brand = await _context.Brands.FindAsync(id);
             if (brand == null)
             {
@@ -128,12 +154,13 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
             {
-                var userId = GetUserId();
-                if (!userId.HasValue || brand.OwnerId != userId.Value)
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == "ManageBrand");
+                if (!hasPermission)
                 {
-                    _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, id);
+                    _logger.LogWarning("Staff user {UserId} does not have ManageBrand permission for brand {BrandId}", userId.Value, id);
                     return Forbid();
                 }
             }
@@ -190,8 +217,13 @@ namespace HakiBaVuong.Controllers
 
             if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, id);
-                return Forbid();
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == "ManageBrand");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageBrand permission for brand {BrandId}", userId.Value, id);
+                    return Forbid();
+                }
             }
 
             if (!string.IsNullOrEmpty(model.BackgroundColor))
@@ -277,8 +309,13 @@ namespace HakiBaVuong.Controllers
 
             if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, id);
-                return Forbid();
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == "ManageBrand");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageBrand permission for brand {BrandId}", userId.Value, id);
+                    return Forbid();
+                }
             }
 
             if (!string.IsNullOrEmpty(brand.BackgroundImageUrl))
@@ -301,6 +338,110 @@ namespace HakiBaVuong.Controllers
             return Ok(brand);
         }
 
+        [HttpPost("{brandId}/staff")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> AddStaff(int brandId, [FromBody] AddStaffDTO model)
+        {
+            _logger.LogInformation("AddStaff called for brand {BrandId}, staff {StaffId}", brandId, model.StaffId);
+
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var brand = await _context.Brands.FindAsync(brandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", brandId);
+                return NotFound(new { message = "Brand không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == "ManageStaff");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageStaff permission for brand {BrandId}", userId.Value, brandId);
+                    return Forbid();
+                }
+            }
+
+            var staff = await _context.Users.FindAsync(model.StaffId);
+            if (staff == null || staff.Role != "Staff")
+            {
+                _logger.LogWarning("Staff user not found or invalid role: {StaffId}", model.StaffId);
+                return NotFound(new { message = "Nhân viên không tồn tại hoặc không phải Staff." });
+            }
+
+            if (staff.BrandId.HasValue)
+            {
+                _logger.LogWarning("Staff {StaffId} already assigned to brand {BrandId}", model.StaffId, staff.BrandId);
+                return BadRequest(new { message = "Nhân viên đã được gán cho một brand." });
+            }
+
+            staff.BrandId = brandId;
+            staff.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Added staff {StaffId} to brand {BrandId}", model.StaffId, brandId);
+            return Ok(new { message = "Thêm nhân viên vào brand thành công." });
+        }
+
+        [HttpDelete("{brandId}/staff/{staffId}")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> RemoveStaff(int brandId, int staffId)
+        {
+            _logger.LogInformation("RemoveStaff called for brand {BrandId}, staff {StaffId}", brandId, staffId);
+
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var brand = await _context.Brands.FindAsync(brandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", brandId);
+                return NotFound(new { message = "Brand không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == "ManageStaff");
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageStaff permission for brand {BrandId}", userId.Value, brandId);
+                    return Forbid();
+                }
+            }
+
+            var staff = await _context.Users.FindAsync(staffId);
+            if (staff == null || staff.Role != "Staff" || staff.BrandId != brandId)
+            {
+                _logger.LogWarning("Staff user not found, invalid role, or not in brand: {StaffId}, BrandId: {BrandId}", staffId, brandId);
+                return NotFound(new { message = "Nhân viên không tồn tại, không phải Staff, hoặc không thuộc brand này." });
+            }
+
+            staff.BrandId = null;
+            staff.UpdatedAt = DateTime.UtcNow;
+
+            var permissions = await _context.StaffPermissions
+                .Where(sp => sp.StaffId == staffId)
+                .ToListAsync();
+            _context.StaffPermissions.RemoveRange(permissions);
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Removed staff {StaffId} from brand {BrandId}", staffId, brandId);
+            return Ok(new { message = "Xóa nhân viên khỏi brand thành công." });
+        }
+
         private int? GetUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -311,5 +452,10 @@ namespace HakiBaVuong.Controllers
         {
             return System.Text.RegularExpressions.Regex.IsMatch(color, "^#[0-9A-Fa-f]{6}$");
         }
+    }
+
+    public class AddStaffDTO
+    {
+        public int StaffId { get; set; }
     }
 }
