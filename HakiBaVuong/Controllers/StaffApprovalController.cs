@@ -123,16 +123,23 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            var brand = await _context.Brands.FirstOrDefaultAsync(b => b.OwnerId == userId.Value);
-            if (brand == null)
+            // Lấy tất cả các brand mà owner sở hữu
+            var brands = await _context.Brands.Where(b => b.OwnerId == userId.Value).ToListAsync();
+            if (brands == null || !brands.Any())
             {
-                _logger.LogWarning("Brand not found for owner: {UserId}", userId);
-                return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
+                _logger.LogWarning("No brands found for owner: {UserId}", userId);
+                return NotFound(new { message = "Bạn không phải là chủ của bất kỳ thương hiệu nào." });
             }
 
-            var approvedStaff = await _context.Users
-                .Where(u => u.BrandId == brand.BrandId && u.ApprovalStatus == "Approved")
-                .ToListAsync();
+            // Lấy tất cả các nhân viên đã được duyệt từ các brand của owner
+            var approvedStaff = new List<User>();
+            foreach (var brand in brands)
+            {
+                var staff = await _context.Users
+                    .Where(u => u.BrandId == brand.BrandId && u.ApprovalStatus == "Approved")
+                    .ToListAsync();
+                approvedStaff.AddRange(staff);
+            }
 
             var userDTOs = _mapper.Map<List<UserDTO>>(approvedStaff);
             return Ok(userDTOs);
@@ -156,10 +163,10 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            var brand = await _context.Brands.FirstOrDefaultAsync(b => b.OwnerId == ownerId.Value);
-            if (brand == null)
+            var brands = await _context.Brands.Where(b => b.OwnerId == ownerId.Value).ToListAsync();
+            if (brands == null || !brands.Any())
             {
-                _logger.LogWarning("Brand not found for owner: {OwnerId}", ownerId);
+                _logger.LogWarning("No brands found for owner: {OwnerId}", ownerId);
                 return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
             }
 
@@ -170,9 +177,10 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            if (user.BrandId != brand.BrandId || user.ApprovalStatus != "Pending")
+            // Kiểm tra xem user có thuộc một trong các brand của owner và đang ở trạng thái Pending không
+            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Pending")
             {
-                _logger.LogWarning("User {UserId} is not a pending applicant for brand {BrandId}", userId, brand.BrandId);
+                _logger.LogWarning("User {UserId} is not a pending applicant for any brand owned by {全年Id}", userId, ownerId);
                 return BadRequest(new { message = "Người dùng không có đơn ứng tuyển hợp lệ." });
             }
 
@@ -180,7 +188,7 @@ namespace HakiBaVuong.Controllers
             _context.Users.Update(user);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("User {UserId} approved for brand {BrandId}", userId, brand.BrandId);
+            _logger.LogInformation("User {UserId} approved for brand {BrandId}", userId, user.BrandId);
             return Ok(new { message = "Duyệt nhân viên thành công." });
         }
 
@@ -202,10 +210,10 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            var brand = await _context.Brands.FirstOrDefaultAsync(b => b.OwnerId == ownerId.Value);
-            if (brand == null)
+            var brands = await _context.Brands.Where(b => b.OwnerId == ownerId.Value).ToListAsync();
+            if (brands == null || !brands.Any())
             {
-                _logger.LogWarning("Brand not found for owner: {OwnerId}", ownerId);
+                _logger.LogWarning("No brands found for owner: {OwnerId}", ownerId);
                 return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
             }
 
@@ -216,9 +224,10 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            if (user.BrandId != brand.BrandId || user.ApprovalStatus != "Pending")
+            // Kiểm tra xem user có thuộc một trong các brand của owner và đang ở trạng thái Pending không
+            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Pending")
             {
-                _logger.LogWarning("User {UserId} is not a pending applicant for brand {BrandId}", userId, brand.BrandId);
+                _logger.LogWarning("User {UserId} is not a pending applicant for any brand owned by {OwnerId}", userId, ownerId);
                 return BadRequest(new { message = "Người dùng không có đơn ứng tuyển hợp lệ." });
             }
 
@@ -227,7 +236,7 @@ namespace HakiBaVuong.Controllers
             _context.Users.Update(user);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("User {UserId} rejected for brand {BrandId}", userId, brand.BrandId);
+            _logger.LogInformation("User {UserId} rejected for brand {BrandId}", userId, user.BrandId);
             return Ok(new { message = "Đã từ chối đơn ứng tuyển." });
         }
 
@@ -241,13 +250,13 @@ namespace HakiBaVuong.Controllers
             var owner = await _context.Users.FindAsync(ownerId.Value);
             if (owner == null) return NotFound(new { message = "Người dùng không tồn tại." });
 
-            var brand = await _context.Brands.FirstOrDefaultAsync(b => b.OwnerId == ownerId.Value);
-            if (brand == null) return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
+            var brands = await _context.Brands.Where(b => b.OwnerId == ownerId.Value).ToListAsync();
+            if (brands == null || !brands.Any()) return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
 
             var user = await _context.Users.FindAsync(userId);
             if (user == null) return NotFound(new { message = "Nhân viên không tồn tại." });
 
-            if (user.BrandId != brand.BrandId || user.ApprovalStatus != "Approved")
+            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Approved")
                 return BadRequest(new { message = "Nhân viên không thuộc thương hiệu hoặc chưa được duyệt." });
 
             user.Name = userDto.Name;
@@ -270,13 +279,13 @@ namespace HakiBaVuong.Controllers
             var owner = await _context.Users.FindAsync(ownerId.Value);
             if (owner == null) return NotFound(new { message = "Người dùng không tồn tại." });
 
-            var brand = await _context.Brands.FirstOrDefaultAsync(b => b.OwnerId == ownerId.Value);
-            if (brand == null) return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
+            var brands = await _context.Brands.Where(b => b.OwnerId == ownerId.Value).ToListAsync();
+            if (brands == null || !brands.Any()) return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
 
             var user = await _context.Users.FindAsync(userId);
             if (user == null) return NotFound(new { message = "Nhân viên không tồn tại." });
 
-            if (user.BrandId != brand.BrandId || user.ApprovalStatus != "Approved")
+            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Approved")
                 return BadRequest(new { message = "Nhân viên không thuộc thương hiệu hoặc chưa được duyệt." });
 
             _context.Users.Remove(user);
