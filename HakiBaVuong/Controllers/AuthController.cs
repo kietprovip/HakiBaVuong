@@ -123,7 +123,7 @@ public class AuthController : ControllerBase
         user.CreatedAt = DateTime.UtcNow;
         user.IsEmailVerified = false;
         user.Role = "Staff";
-        user.BrandId = null; // Mặc định BrandId là NULL
+        user.BrandId = null;
 
         try
         {
@@ -209,7 +209,8 @@ public class AuthController : ControllerBase
             token,
             userId = user.UserId,
             role = user.Role,
-            brandId = user.BrandId
+            brandId = user.BrandId,
+            approvalStatus = user.ApprovalStatus
         });
     }
 

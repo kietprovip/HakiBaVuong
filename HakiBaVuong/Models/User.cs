@@ -20,6 +20,7 @@ namespace HakiBaVuong.Models
         public string Role { get; set; }
 
         public int? BrandId { get; set; }
+        public string? ApprovalStatus { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
 

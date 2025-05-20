@@ -99,6 +99,19 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Không thể xác định userId từ token." });
             }
 
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found: {UserId}", userId);
+                return NotFound(new { message = "Người dùng không tồn tại." });
+            }
+
+            if (user.BrandId.HasValue)
+            {
+                _logger.LogWarning("User {UserId} is already associated with a brand", userId);
+                return BadRequest(new { message = "Bạn đã thuộc một thương hiệu, không thể tạo thương hiệu mới." });
+            }
+
             var brand = new Brand
             {
                 Name = brandDto.Name,
@@ -128,10 +141,29 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Brand không tồn tại." });
             }
 
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found: {UserId}", userId);
+                return NotFound(new { message = "Người dùng không tồn tại." });
+            }
+
+            if (user.BrandId.HasValue)
+            {
+                _logger.LogWarning("User {UserId} is already associated with a brand", userId);
+                return BadRequest(new { message = "Bạn đã thuộc một thương hiệu, không thể sửa thương hiệu." });
+            }
+
             if (User.IsInRole("Staff"))
             {
-                var userId = GetUserId();
-                if (!userId.HasValue || brand.OwnerId != userId.Value)
+                if (brand.OwnerId != userId.Value)
                 {
                     _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, id);
                     return Forbid();
@@ -186,6 +218,19 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogWarning("Brand not found: {BrandId}", id);
                 return NotFound(new { message = "Brand không tồn tại." });
+            }
+
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found: {UserId}", userId);
+                return NotFound(new { message = "Người dùng không tồn tại." });
+            }
+
+            if (user.BrandId.HasValue)
+            {
+                _logger.LogWarning("User {UserId} is already associated with a brand", userId);
+                return BadRequest(new { message = "Bạn đã thuộc một thương hiệu, không thể cập nhật background." });
             }
 
             if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
@@ -273,6 +318,19 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogWarning("Brand not found: {BrandId}", id);
                 return NotFound(new { message = "Brand không tồn tại." });
+            }
+
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found: {UserId}", userId);
+                return NotFound(new { message = "Người dùng không tồn tại." });
+            }
+
+            if (user.BrandId.HasValue)
+            {
+                _logger.LogWarning("User {UserId} is already associated with a brand", userId);
+                return BadRequest(new { message = "Bạn đã thuộc một thương hiệu, không thể xóa background." });
             }
 
             if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
