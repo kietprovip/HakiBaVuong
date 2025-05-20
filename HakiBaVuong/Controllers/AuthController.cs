@@ -36,16 +36,13 @@ public class AuthController : ControllerBase
         _logger = logger;
         _cache = cache;
 
-
         InitializeDefaultAdminAndBrand();
     }
 
     private void InitializeDefaultAdminAndBrand()
     {
-
         if (!_context.Users.Any(u => u.Email == "admin@example.com"))
         {
-
             var adminUser = new User
             {
                 Name = "Admin",
@@ -61,7 +58,6 @@ public class AuthController : ControllerBase
             _context.Users.Add(adminUser);
             _context.SaveChanges();
             _logger.LogInformation("Tài khoản admin mặc định đã được tạo: admin@example.com");
-
 
             var defaultBrand = new Brand
             {
@@ -95,13 +91,12 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterDTO model)
     {
-        _logger.LogInformation("Đăng ký được gọi cho email: {Email}, BrandId: {BrandId}", model?.Email, model?.BrandId);
-
+        _logger.LogInformation("Đăng ký được gọi cho email: {Email}", model?.Email);
 
         if (model == null || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Password) || string.IsNullOrEmpty(model.ConfirmPassword))
         {
-            _logger.LogWarning("Dữ liệu đầu vào không hợp lệ: Email={Email}, BrandId={BrandId}",
-                model?.Email ?? "null", model?.BrandId?.ToString() ?? "null");
+            _logger.LogWarning("Dữ liệu đầu vào không hợp lệ: Email={Email}",
+                model?.Email ?? "null");
             return BadRequest(new { message = "Dữ liệu đầu vào không hợp lệ." });
         }
 
@@ -110,7 +105,6 @@ public class AuthController : ControllerBase
             _logger.LogWarning("Email đã tồn tại: {Email}", model.Email);
             return BadRequest(new { message = "Email đã tồn tại." });
         }
-
 
         if (model.Password != model.ConfirmPassword)
         {
@@ -129,24 +123,7 @@ public class AuthController : ControllerBase
         user.CreatedAt = DateTime.UtcNow;
         user.IsEmailVerified = false;
         user.Role = "Staff";
-
-
-        if (user.Role == "Staff" && !model.BrandId.HasValue)
-        {
-            _logger.LogWarning("BrandId là bắt buộc cho Staff: {Email}", model.Email);
-            return BadRequest(new { message = "Staff phải chọn một Brand." });
-        }
-
-        if (model.BrandId.HasValue)
-        {
-            var brand = await _context.Brands.FindAsync(model.BrandId.Value);
-            if (brand == null)
-            {
-                _logger.LogWarning("Không tìm thấy Brand: {BrandId}", model.BrandId);
-                return BadRequest(new { message = "Brand không tồn tại." });
-            }
-            user.BrandId = model.BrandId.Value;
-        }
+        user.BrandId = null; // Mặc định BrandId là NULL
 
         try
         {
@@ -159,7 +136,6 @@ public class AuthController : ControllerBase
             return StatusCode(500, new { message = "Lỗi server khi lưu thông tin user." });
         }
 
-        // Gửi OTP xác thực email
         string otp = GenerateOtp();
         await StoreOtpInCache(user.Email, otp, "RegisterOTP");
         _logger.LogInformation("Đã tạo OTP cho {Email}: {Otp}", user.Email, otp);
