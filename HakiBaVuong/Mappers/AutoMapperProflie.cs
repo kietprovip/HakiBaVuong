@@ -4,13 +4,12 @@ using HakiBaVuong.Models;
 
 namespace sexthu.Mappers
 {
-    public class AutoMapperProflie : Profile
+    public class AutoMapperProfile : Profile
     {
-        public AutoMapperProflie()
+        public AutoMapperProfile()
         {
             CreateMap<User, UserDTO>().ReverseMap();
             CreateMap<Brand, BrandDTO>().ReverseMap();
-            CreateMap<Permission, PermissionDTO>().ReverseMap();
             CreateMap<StaffPermission, StaffPermissionDTO>().ReverseMap();
             CreateMap<Customer, CustomerDTO>().ReverseMap()
                 .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses));
@@ -47,7 +46,7 @@ namespace sexthu.Mappers
                 .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => src.EndDate ?? DateTime.MaxValue));
 
             CreateMap<RegisterDTO, User>()
-                .ForMember(dest => dest.Role, opt => opt.MapFrom(src => "staff"))
+                .ForMember(dest => dest.Role, opt => opt.MapFrom(src => "Staff"))
                 .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Email))
                 .ForMember(dest => dest.Password, opt => opt.Ignore());
 

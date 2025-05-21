@@ -29,7 +29,6 @@ namespace HakiBaVuong.Controllers
 
         private async Task<bool> IsBrandOwner(int userId)
         {
-            // Kiểm tra xem user có phải là chủ brand không: BrandId = null và có brand mà user sở hữu (OwnerId khớp với UserId)
             var user = await _context.Users.FindAsync(userId);
             if (user == null || user.BrandId != null) return false;
 
@@ -39,7 +38,6 @@ namespace HakiBaVuong.Controllers
 
         private async Task<bool> CanManageStaff(int userId, int staffId)
         {
-            // Kiểm tra xem user có quyền quản lý nhân viên này không
             var staff = await _context.Users.FindAsync(staffId);
             if (staff == null || staff.BrandId == null || staff.ApprovalStatus != "Approved") return false;
 
@@ -50,7 +48,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Permission>>> GetAll()
+        public async Task<ActionResult<IEnumerable<StaffPermission>>> GetAll()
         {
             var userId = GetUserId();
             if (!userId.HasValue)
@@ -65,13 +63,13 @@ namespace HakiBaVuong.Controllers
                 return StatusCode(403, new { message = "Bạn không có quyền truy cập API này." });
             }
 
-            _logger.LogInformation("GetAll permissions called");
-            var permissions = await _context.Permissions.ToListAsync();
-            return Ok(permissions);
+            _logger.LogInformation("GetAll staff roles called");
+            var staffPermissions = await _context.StaffPermissions.ToListAsync();
+            return Ok(staffPermissions);
         }
 
         [HttpPost("assign")]
-        public async Task<IActionResult> AssignPermissions([FromBody] AssignPermissionDto dto)
+        public async Task<IActionResult> AssignRoles([FromBody] AssignRoleDto dto)
         {
             var userId = GetUserId();
             if (!userId.HasValue)
@@ -92,38 +90,42 @@ namespace HakiBaVuong.Controllers
                 return StatusCode(403, new { message = "Bạn không có quyền quản lý nhân viên này." });
             }
 
-            _logger.LogInformation("AssignPermissions called for staff ID: {StaffId}", dto.StaffId);
+            _logger.LogInformation("AssignRoles called for staff ID: {StaffId}", dto.StaffId);
 
             var staff = await _context.Users.FindAsync(dto.StaffId);
-            if (staff == null || staff.Role != "Staff")
+            if (staff == null || (staff.Role != "Staff" && staff.Role != "InventoryManager" && staff.Role != "BrandManager"))
             {
                 _logger.LogWarning("Staff not found or invalid role for ID: {StaffId}", dto.StaffId);
                 return BadRequest(new { message = "Nhân viên không tồn tại hoặc không hợp lệ." });
             }
 
-            var existingPermissions = await _context.StaffPermissions
+            // Validate the roles being assigned
+            var validRoles = new List<string> { "Staff", "InventoryManager", "BrandManager" };
+            if (dto.Roles.Any(role => !validRoles.Contains(role)))
+            {
+                _logger.LogWarning("Invalid role assignment for staff ID: {StaffId}", dto.StaffId);
+                return BadRequest(new { message = "Một hoặc nhiều vai trò không hợp lệ." });
+            }
+
+            // Remove existing role assignments for this staff member
+            var existingRoles = await _context.StaffPermissions
                 .Where(sp => sp.StaffId == dto.StaffId)
                 .ToListAsync();
-            _context.StaffPermissions.RemoveRange(existingPermissions);
+            _context.StaffPermissions.RemoveRange(existingRoles);
 
-            foreach (var permissionId in dto.PermissionIds)
+            // Assign new roles
+            foreach (var role in dto.Roles)
             {
-                var permission = await _context.Permissions.FindAsync(permissionId);
-                if (permission == null)
-                {
-                    _logger.LogWarning("Permission not found: {PermissionId}", permissionId);
-                    return BadRequest(new { message = "Quyền không tồn tại." });
-                }
-                _context.StaffPermissions.Add(new StaffPermission { StaffId = dto.StaffId, PermissionId = permissionId });
+                _context.StaffPermissions.Add(new StaffPermission { StaffId = dto.StaffId, Role = role });
             }
 
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Assigned permissions to staff ID: {StaffId}", dto.StaffId);
-            return Ok(new { message = "Phân công quyền thành công." });
+            _logger.LogInformation("Assigned roles to staff ID: {StaffId}", dto.StaffId);
+            return Ok(new { message = "Phân công vai trò thành công." });
         }
 
         [HttpGet("check")]
-        public async Task<IActionResult> CheckPermission(string permissionName)
+        public async Task<IActionResult> CheckRole(string roleName)
         {
             var userId = GetUserId();
             if (!userId.HasValue)
@@ -132,26 +134,26 @@ namespace HakiBaVuong.Controllers
                 return Unauthorized(new { message = "Token không hợp lệ." });
             }
 
-            _logger.LogInformation("CheckPermission called for permission: {PermissionName}", permissionName);
+            _logger.LogInformation("CheckRole called for role: {RoleName}", roleName);
 
-            var hasPermission = await _context.StaffPermissions
-                .AnyAsync(sp => sp.StaffId == userId.Value && sp.Permission.Name == permissionName);
+            var hasRole = await _context.StaffPermissions
+                .AnyAsync(sp => sp.StaffId == userId.Value && sp.Role == roleName);
 
-            // Chủ brand không cần kiểm tra quyền, họ có toàn quyền
+            // Brand owners have full access, no need to check roles
             var isBrandOwner = await IsBrandOwner(userId.Value);
-            if (hasPermission || isBrandOwner)
+            if (hasRole || isBrandOwner)
             {
                 return Ok(new { hasAccess = true });
             }
 
-            _logger.LogWarning("User {UserId} does not have permission: {PermissionName}", userId, permissionName);
-            return StatusCode(403, new { message = "Bạn không được phân công quyền này." });
+            _logger.LogWarning("User {UserId} does not have role: {RoleName}", userId, roleName);
+            return StatusCode(403, new { message = "Bạn không được phân công vai trò này." });
         }
     }
 
-    public class AssignPermissionDto
+    public class AssignRoleDto
     {
         public int StaffId { get; set; }
-        public List<int> PermissionIds { get; set; }
+        public List<string> Roles { get; set; }  // List of roles like ["Staff", "InventoryManager"]
     }
 }

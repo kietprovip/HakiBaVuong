@@ -44,7 +44,27 @@ namespace HakiBaVuong.Controllers
             }
             else
             {
-                query = _context.Brands.Where(b => b.OwnerId == userId.Value);
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                if (user.BrandId.HasValue)
+                {
+                    var brand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (brand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    query = _context.Brands.Where(b => b.OwnerId == brand.OwnerId);
+                }
+                else
+                {
+                    query = _context.Brands.Where(b => b.OwnerId == userId.Value);
+                }
             }
 
             var brands = await query
@@ -76,7 +96,29 @@ namespace HakiBaVuong.Controllers
             if (User.IsInRole("Staff"))
             {
                 var userId = GetUserId();
-                if (!userId.HasValue || brand.OwnerId != userId.Value)
+                if (!userId.HasValue)
+                {
+                    _logger.LogWarning("Invalid userId from token");
+                    return Unauthorized(new { message = "Token không hợp lệ." });
+                }
+
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null || userBrand.OwnerId != brand.OwnerId)
+                    {
+                        _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, id);
+                        return Forbid();
+                    }
+                }
+                else if (brand.OwnerId != userId.Value)
                 {
                     _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, id);
                     return Forbid();

@@ -3,6 +3,6 @@
     public class StaffPermissionDTO
     {
         public int StaffId { get; set; }
-        public int PermissionId { get; set; }
+        public string Role { get; set; }  // Now stores the role directly
     }
 }

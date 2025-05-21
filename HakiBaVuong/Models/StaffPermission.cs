@@ -1,5 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HakiBaVuong.Models
 {
@@ -9,12 +9,10 @@ namespace HakiBaVuong.Models
         public int StaffId { get; set; }
 
         [Key, Column(Order = 2)]
-        public int PermissionId { get; set; }
+        [Required]
+        public string Role { get; set; }  // Stores roles like "Staff", "InventoryManager", or "BrandManager"
 
         [ForeignKey("StaffId")]
         public virtual User Staff { get; set; }
-
-        [ForeignKey("PermissionId")]
-        public virtual Permission Permission { get; set; }
     }
 }

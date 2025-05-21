@@ -1,13 +1,16 @@
 ﻿using HakiBaVuong.DTOs;
 using HakiBaVuong.Models;
+using Microsoft.AspNetCore.Authorization; // Thêm để sử dụng Authorize
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HakiBaVuong.Data;
+using System.Security.Claims; // Thêm để lấy userId từ token
 
 namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Admin,Staff,InventoryManager")] // Thêm InventoryManager vào danh sách vai trò
     public class InventoryController : ControllerBase
     {
         private readonly DataContext _context;
@@ -23,6 +26,60 @@ namespace HakiBaVuong.Controllers
         public async Task<ActionResult<Inventory>> GetByProductId(int productId)
         {
             _logger.LogInformation("GetByProductId called for product ID: {ProductId}", productId);
+
+            // Kiểm tra quyền truy cập
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var product = await _context.Products.FindAsync(productId);
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {ProductId}", productId);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            var brand = await _context.Brands.FindAsync(product.BrandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found for product ID: {ProductId}", productId);
+                return NotFound(new { message = "Thương hiệu không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") || User.IsInRole("InventoryManager"))
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                if (brand.OwnerId != effectiveOwnerId)
+                {
+                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, brand.BrandId);
+                    return Forbid();
+                }
+            }
 
             var inventory = await _context.Inventories
                 .Include(i => i.Product)
@@ -54,6 +111,60 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Không tìm thấy thông tin tồn kho." });
             }
 
+            // Kiểm tra quyền truy cập
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var product = await _context.Products.FindAsync(productId);
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {ProductId}", productId);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            var brand = await _context.Brands.FindAsync(product.BrandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found for product ID: {ProductId}", productId);
+                return NotFound(new { message = "Thương hiệu không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") || User.IsInRole("InventoryManager"))
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                if (brand.OwnerId != effectiveOwnerId)
+                {
+                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, brand.BrandId);
+                    return Forbid();
+                }
+            }
+
             if (inventoryDto.StockQuantity < 0)
             {
                 _logger.LogWarning("Invalid StockQuantity: {StockQuantity}", inventoryDto.StockQuantity);
@@ -66,6 +177,12 @@ namespace HakiBaVuong.Controllers
             await _context.SaveChangesAsync();
             _logger.LogInformation("Updated inventory for product ID: {ProductId}, new quantity: {StockQuantity}", productId, inventory.StockQuantity);
             return NoContent();
+        }
+
+        private int? GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(userIdClaim, out int userId) ? userId : null;
         }
     }
 }

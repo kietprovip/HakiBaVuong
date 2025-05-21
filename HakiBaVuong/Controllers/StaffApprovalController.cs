@@ -26,7 +26,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPost("apply/{brandId}")]
-        [Authorize(Roles = "Staff")]
+        [Authorize(Roles = "Staff,InventoryManager,BrandManager")] // Thêm InventoryManager và BrandManager
         public async Task<IActionResult> ApplyToBrand(int brandId)
         {
             var userId = GetUserId();
@@ -66,7 +66,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("pending-applications")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager
         public async Task<ActionResult<IEnumerable<UserDTO>>> GetPendingApplications()
         {
             var userId = GetUserId();
@@ -83,7 +83,6 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            // Lấy tất cả các brand mà owner sở hữu
             var brands = await _context.Brands.Where(b => b.OwnerId == userId.Value).ToListAsync();
             if (brands == null || !brands.Any())
             {
@@ -91,7 +90,39 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Bạn không phải là chủ của bất kỳ thương hiệu nào." });
             }
 
-            // Lấy tất cả các ứng viên pending từ các brand của owner
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                brands = brands.Where(b => b.OwnerId == effectiveOwnerId).ToList();
+                if (!brands.Any())
+                {
+                    _logger.LogWarning("No brands found for user {UserId} after permission check", userId);
+                    return NotFound(new { message = "Bạn không có quyền truy cập thương hiệu nào." });
+                }
+            }
+
             var pendingUsers = new List<User>();
             foreach (var brand in brands)
             {
@@ -106,7 +137,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("approved-staff")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager
         public async Task<ActionResult<IEnumerable<UserDTO>>> GetApprovedStaff()
         {
             var userId = GetUserId();
@@ -123,7 +154,6 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            // Lấy tất cả các brand mà owner sở hữu
             var brands = await _context.Brands.Where(b => b.OwnerId == userId.Value).ToListAsync();
             if (brands == null || !brands.Any())
             {
@@ -131,7 +161,39 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Bạn không phải là chủ của bất kỳ thương hiệu nào." });
             }
 
-            // Lấy tất cả các nhân viên đã được duyệt từ các brand của owner
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                brands = brands.Where(b => b.OwnerId == effectiveOwnerId).ToList();
+                if (!brands.Any())
+                {
+                    _logger.LogWarning("No brands found for user {UserId} after permission check", userId);
+                    return NotFound(new { message = "Bạn không có quyền truy cập thương hiệu nào." });
+                }
+            }
+
             var approvedStaff = new List<User>();
             foreach (var brand in brands)
             {
@@ -146,7 +208,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPost("approve/{userId}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager
         public async Task<IActionResult> ApproveApplication(int userId)
         {
             var ownerId = GetUserId();
@@ -170,30 +232,62 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
             }
 
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null)
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(ownerId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", ownerId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = ownerId.Value;
+                }
+
+                brands = brands.Where(b => b.OwnerId == effectiveOwnerId).ToList();
+                if (!brands.Any())
+                {
+                    _logger.LogWarning("No brands found for user {UserId} after permission check", ownerId);
+                    return NotFound(new { message = "Bạn không có quyền truy cập thương hiệu nào." });
+                }
+            }
+
+            var userToApprove = await _context.Users.FindAsync(userId);
+            if (userToApprove == null)
             {
                 _logger.LogWarning("User not found: {UserId}", userId);
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            // Kiểm tra xem user có thuộc một trong các brand của owner và đang ở trạng thái Pending không
-            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Pending")
+            if (!brands.Any(b => b.BrandId == userToApprove.BrandId) || userToApprove.ApprovalStatus != "Pending")
             {
-                _logger.LogWarning("User {UserId} is not a pending applicant for any brand owned by {全年Id}", userId, ownerId);
+                _logger.LogWarning("User {UserId} is not a pending applicant for any brand owned by {OwnerId}", userId, ownerId);
                 return BadRequest(new { message = "Người dùng không có đơn ứng tuyển hợp lệ." });
             }
 
-            user.ApprovalStatus = "Approved";
-            _context.Users.Update(user);
+            userToApprove.ApprovalStatus = "Approved";
+            _context.Users.Update(userToApprove);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("User {UserId} approved for brand {BrandId}", userId, user.BrandId);
+            _logger.LogInformation("User {UserId} approved for brand {BrandId}", userId, userToApprove.BrandId);
             return Ok(new { message = "Duyệt nhân viên thành công." });
         }
 
         [HttpPost("reject/{userId}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager
         public async Task<IActionResult> RejectApplication(int userId)
         {
             var ownerId = GetUserId();
@@ -217,31 +311,63 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
             }
 
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null)
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(ownerId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", ownerId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = ownerId.Value;
+                }
+
+                brands = brands.Where(b => b.OwnerId == effectiveOwnerId).ToList();
+                if (!brands.Any())
+                {
+                    _logger.LogWarning("No brands found for user {UserId} after permission check", ownerId);
+                    return NotFound(new { message = "Bạn không có quyền truy cập thương hiệu nào." });
+                }
+            }
+
+            var userToReject = await _context.Users.FindAsync(userId);
+            if (userToReject == null)
             {
                 _logger.LogWarning("User not found: {UserId}", userId);
                 return NotFound(new { message = "Người dùng không tồn tại." });
             }
 
-            // Kiểm tra xem user có thuộc một trong các brand của owner và đang ở trạng thái Pending không
-            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Pending")
+            if (!brands.Any(b => b.BrandId == userToReject.BrandId) || userToReject.ApprovalStatus != "Pending")
             {
                 _logger.LogWarning("User {UserId} is not a pending applicant for any brand owned by {OwnerId}", userId, ownerId);
                 return BadRequest(new { message = "Người dùng không có đơn ứng tuyển hợp lệ." });
             }
 
-            user.BrandId = null;
-            user.ApprovalStatus = null;
-            _context.Users.Update(user);
+            userToReject.BrandId = null;
+            userToReject.ApprovalStatus = null;
+            _context.Users.Update(userToReject);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("User {UserId} rejected for brand {BrandId}", userId, user.BrandId);
+            _logger.LogInformation("User {UserId} rejected for brand {BrandId}", userId, userToReject.BrandId);
             return Ok(new { message = "Đã từ chối đơn ứng tuyển." });
         }
 
         [HttpPut("update/{userId}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager
         public async Task<IActionResult> UpdateStaff(int userId, [FromBody] UserDTO userDto)
         {
             var ownerId = GetUserId();
@@ -253,16 +379,49 @@ namespace HakiBaVuong.Controllers
             var brands = await _context.Brands.Where(b => b.OwnerId == ownerId.Value).ToListAsync();
             if (brands == null || !brands.Any()) return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
 
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null) return NotFound(new { message = "Nhân viên không tồn tại." });
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(ownerId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", ownerId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
 
-            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Approved")
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = ownerId.Value;
+                }
+
+                brands = brands.Where(b => b.OwnerId == effectiveOwnerId).ToList();
+                if (!brands.Any())
+                {
+                    _logger.LogWarning("No brands found for user {UserId} after permission check", ownerId);
+                    return NotFound(new { message = "Bạn không có quyền truy cập thương hiệu nào." });
+                }
+            }
+
+            var userToUpdate = await _context.Users.FindAsync(userId);
+            if (userToUpdate == null) return NotFound(new { message = "Nhân viên không tồn tại." });
+
+            if (!brands.Any(b => b.BrandId == userToUpdate.BrandId) || userToUpdate.ApprovalStatus != "Approved")
                 return BadRequest(new { message = "Nhân viên không thuộc thương hiệu hoặc chưa được duyệt." });
 
-            user.Name = userDto.Name;
-            user.Email = userDto.Email;
-            user.Role = userDto.Role;
-            _context.Users.Update(user);
+            userToUpdate.Name = userDto.Name;
+            userToUpdate.Email = userDto.Email;
+            userToUpdate.Role = userDto.Role;
+            _context.Users.Update(userToUpdate);
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("User {UserId} updated by {OwnerId}", userId, ownerId);
@@ -270,7 +429,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpDelete("delete/{userId}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager
         public async Task<IActionResult> DeleteStaff(int userId)
         {
             var ownerId = GetUserId();
@@ -282,13 +441,46 @@ namespace HakiBaVuong.Controllers
             var brands = await _context.Brands.Where(b => b.OwnerId == ownerId.Value).ToListAsync();
             if (brands == null || !brands.Any()) return NotFound(new { message = "Bạn không phải là chủ thương hiệu." });
 
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null) return NotFound(new { message = "Nhân viên không tồn tại." });
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(ownerId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", ownerId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
 
-            if (!brands.Any(b => b.BrandId == user.BrandId) || user.ApprovalStatus != "Approved")
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = ownerId.Value;
+                }
+
+                brands = brands.Where(b => b.OwnerId == effectiveOwnerId).ToList();
+                if (!brands.Any())
+                {
+                    _logger.LogWarning("No brands found for user {UserId} after permission check", ownerId);
+                    return NotFound(new { message = "Bạn không có quyền truy cập thương hiệu nào." });
+                }
+            }
+
+            var userToDelete = await _context.Users.FindAsync(userId);
+            if (userToDelete == null) return NotFound(new { message = "Nhân viên không tồn tại." });
+
+            if (!brands.Any(b => b.BrandId == userToDelete.BrandId) || userToDelete.ApprovalStatus != "Approved")
                 return BadRequest(new { message = "Nhân viên không thuộc thương hiệu hoặc chưa được duyệt." });
 
-            _context.Users.Remove(user);
+            _context.Users.Remove(userToDelete);
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("User {UserId} deleted by {OwnerId}", userId, ownerId);

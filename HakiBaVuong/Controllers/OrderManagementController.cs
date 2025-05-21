@@ -10,7 +10,7 @@ namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager vào danh sách vai trò
     public class OrderManagementController : ControllerBase
     {
         private readonly DataContext _context;
@@ -41,10 +41,36 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff") && brand.OwnerId != userId)
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, brandId);
-                return Forbid();
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                if (brand.OwnerId != effectiveOwnerId)
+                {
+                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, brandId);
+                    return Forbid();
+                }
             }
 
             var query = _context.Orders
@@ -136,10 +162,42 @@ namespace HakiBaVuong.Controllers
             }
 
             var brand = await _context.Brands.FindAsync(order.BrandId);
-            if (brand == null || (User.IsInRole("Staff") && brand.OwnerId != userId))
+            if (brand == null)
             {
-                _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
-                return Forbid();
+                _logger.LogWarning("Brand not found for order {OrderId}", id);
+                return NotFound(new { message = "Thương hiệu không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                if (brand.OwnerId != effectiveOwnerId)
+                {
+                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
+                    return Forbid();
+                }
             }
 
             if (order.Status != "Chưa thanh toán")
@@ -245,10 +303,42 @@ namespace HakiBaVuong.Controllers
             }
 
             var brand = await _context.Brands.FindAsync(order.BrandId);
-            if (brand == null || (User.IsInRole("Staff") && brand.OwnerId != userId))
+            if (brand == null)
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
-                return Forbid();
+                _logger.LogWarning("Brand not found for order {OrderId}", id);
+                return NotFound(new { message = "Thương hiệu không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                if (brand.OwnerId != effectiveOwnerId)
+                {
+                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
+                    return Forbid();
+                }
             }
 
             var validStatuses = new[] { "Chưa thanh toán", "Đã thanh toán", "Huỷ đơn hàng" };
@@ -354,10 +444,42 @@ namespace HakiBaVuong.Controllers
             }
 
             var brand = await _context.Brands.FindAsync(order.BrandId);
-            if (brand == null || (User.IsInRole("Staff") && brand.OwnerId != userId))
+            if (brand == null)
             {
-                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
-                return Forbid();
+                _logger.LogWarning("Brand not found for order {OrderId}", id);
+                return NotFound(new { message = "Thương hiệu không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId.Value;
+                }
+
+                if (brand.OwnerId != effectiveOwnerId)
+                {
+                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
+                    return Forbid();
+                }
             }
 
             if (order.Status != "Chưa thanh toán")

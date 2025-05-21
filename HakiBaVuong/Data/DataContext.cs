@@ -9,8 +9,7 @@ namespace HakiBaVuong.Data
 
         public DbSet<User> Users { get; set; }
         public DbSet<Brand> Brands { get; set; }
-        public DbSet<Permission> Permissions { get; set; }
-        public DbSet<StaffPermission> StaffPermissions { get; set; }
+        public DbSet<StaffPermission> StaffPermissions { get; set; }  // Permission is removed
         public DbSet<Customer> Customers { get; set; }
         public DbSet<CustomerAddress> CustomerAddresses { get; set; }
         public DbSet<Product> Products { get; set; }
@@ -46,18 +45,12 @@ namespace HakiBaVuong.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<StaffPermission>()
-                .HasKey(sp => new { sp.StaffId, sp.PermissionId });
+                .HasKey(sp => new { sp.StaffId, sp.Role });  // Updated composite key
 
             modelBuilder.Entity<StaffPermission>()
                 .HasOne(sp => sp.Staff)
                 .WithMany()
                 .HasForeignKey(sp => sp.StaffId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<StaffPermission>()
-                .HasOne(sp => sp.Permission)
-                .WithMany()
-                .HasForeignKey(sp => sp.PermissionId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<CustomerAddress>()
@@ -89,7 +82,6 @@ namespace HakiBaVuong.Data
                 .WithMany()
                 .HasForeignKey(oi => oi.OrderId)
                 .OnDelete(DeleteBehavior.NoAction);
-
 
             modelBuilder.Entity<OrderItem>()
                 .HasOne(oi => oi.Product)
