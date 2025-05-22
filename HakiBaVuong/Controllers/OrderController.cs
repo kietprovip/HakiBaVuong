@@ -159,6 +159,19 @@ namespace HakiBaVuong.Controllers
                     _context.Inventories.Update(inventory);
                 }
 
+                // Tăng LoyaltyPoints cho khách hàng
+                var customer = await _context.Customers.FindAsync(customerId);
+                if (customer != null)
+                {
+                    customer.LoyaltyPoints += 1;
+                    _context.Customers.Update(customer);
+                }
+                else
+                {
+                    _logger.LogWarning("Customer not found for customerId {CustomerId}", customerId);
+                    throw new Exception($"Không tìm thấy khách hàng với ID {customerId}");
+                }
+
                 _context.CartItems.RemoveRange(cartItemsForBrand);
                 await _context.SaveChangesAsync();
 
@@ -201,7 +214,7 @@ namespace HakiBaVuong.Controllers
                     }
                 };
 
-                _logger.LogInformation("Created order {OrderId} for customer {CustomerId}", order.OrderId, customerId);
+                _logger.LogInformation("Created order {OrderId} for customer {CustomerId} with LoyaltyPoints incremented to {LoyaltyPoints}", order.OrderId, customerId, customer.LoyaltyPoints);
                 return CreatedAtAction(nameof(GetOrder), new { id = order.OrderId }, orderDto);
             }
             catch (Exception ex)
@@ -213,6 +226,7 @@ namespace HakiBaVuong.Controllers
             }
         }
 
+        // Các phương thức khác giữ nguyên
         [HttpGet("{id}")]
         public async Task<ActionResult<OrderDTO>> GetOrder(int id)
         {
