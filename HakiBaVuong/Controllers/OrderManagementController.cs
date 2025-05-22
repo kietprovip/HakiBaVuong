@@ -10,7 +10,7 @@ namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin,Staff,BrandManager")] // Thêm BrandManager vào danh sách vai trò
+    [Authorize(Roles = "Admin,Staff,BrandManager")]
     public class OrderManagementController : ControllerBase
     {
         private readonly DataContext _context;
@@ -418,99 +418,6 @@ namespace HakiBaVuong.Controllers
 
             _logger.LogInformation("Updated order {OrderId} by user {UserId}", id, userId);
             return Ok(orderDto);
-        }
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteOrder(int id)
-        {
-            _logger.LogInformation("DeleteOrder called for order {OrderId}", id);
-
-            var userId = GetUserId();
-            if (userId == null)
-            {
-                _logger.LogWarning("Invalid userId from token");
-                return Unauthorized(new { message = "Token không hợp lệ." });
-            }
-
-            var order = await _context.Orders
-                .Include(o => o.OrderItems)
-                .Include(o => o.Payment)
-                .FirstOrDefaultAsync(o => o.OrderId == id);
-
-            if (order == null)
-            {
-                _logger.LogWarning("Order not found: {OrderId}", id);
-                return NotFound(new { message = "Đơn hàng không tồn tại." });
-            }
-
-            var brand = await _context.Brands.FindAsync(order.BrandId);
-            if (brand == null)
-            {
-                _logger.LogWarning("Brand not found for order {OrderId}", id);
-                return NotFound(new { message = "Thương hiệu không tồn tại." });
-            }
-
-            if (User.IsInRole("Staff") || User.IsInRole("BrandManager"))
-            {
-                var user = await _context.Users.FindAsync(userId.Value);
-                if (user == null)
-                {
-                    _logger.LogWarning("User not found: {UserId}", userId);
-                    return NotFound(new { message = "Người dùng không tồn tại." });
-                }
-
-                int effectiveOwnerId;
-                if (user.BrandId.HasValue)
-                {
-                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
-                    if (userBrand == null)
-                    {
-                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
-                        return NotFound(new { message = "Thương hiệu không tồn tại." });
-                    }
-                    effectiveOwnerId = userBrand.OwnerId;
-                }
-                else
-                {
-                    effectiveOwnerId = userId.Value;
-                }
-
-                if (brand.OwnerId != effectiveOwnerId)
-                {
-                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, order.BrandId);
-                    return Forbid();
-                }
-            }
-
-            if (order.Status != "Chưa thanh toán")
-            {
-                _logger.LogWarning("Order {OrderId} cannot be deleted, status: {Status}", id, order.Status);
-                return BadRequest(new { message = "Chỉ có thể xóa đơn hàng ở trạng thái Chưa thanh toán." });
-            }
-
-            foreach (var item in order.OrderItems)
-            {
-                if (item.ProductId.HasValue)
-                {
-                    var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId.Value);
-                    if (inventory != null)
-                    {
-                        inventory.StockQuantity += item.Quantity;
-                        inventory.LastUpdated = DateTime.UtcNow;
-                        _context.Inventories.Update(inventory);
-                    }
-                }
-            }
-
-            if (order.Payment != null)
-            {
-                _context.Payments.Remove(order.Payment);
-            }
-            _context.Orders.Remove(order);
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation("Deleted order {OrderId} by user {UserId}", id, userId);
-            return Ok(new { message = "Xóa đơn hàng thành công." });
         }
 
         private int? GetUserId()
