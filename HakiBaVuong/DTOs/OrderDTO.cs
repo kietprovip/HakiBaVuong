@@ -12,6 +12,7 @@
         public string DeliveryStatus { get; set; }
         public DateTime? EstimatedDeliveryDate { get; set; }
         public decimal TotalAmount { get; set; }
+        public decimal Discount { get; set; }
         public DateTime CreatedAt { get; set; }
         public List<OrderItemDTO> OrderItems { get; set; }
         public PaymentDTO Payment { get; set; }

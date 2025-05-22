@@ -21,6 +21,8 @@ namespace HakiBaVuong.Models
         [Required]
         public decimal TotalAmount { get; set; }
 
+        public decimal Discount { get; set; }
+
         public int? PaymentId { get; set; }
 
         public string DeliveryStatus { get; set; }

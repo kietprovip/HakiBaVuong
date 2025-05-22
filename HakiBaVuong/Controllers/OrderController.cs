@@ -26,8 +26,8 @@ namespace HakiBaVuong.Controllers
         [HttpPost("create")]
         public async Task<ActionResult<OrderDTO>> CreateOrder([FromBody] CreateOrderDTO model)
         {
-            _logger.LogInformation("CreateOrder called with paymentMethod {PaymentMethod}, fullName {FullName}, phone {Phone}, address {Address}, brandId {BrandId}, addressId {AddressId}",
-                model.PaymentMethod, model.FullName, model.Phone, model.Address, model.BrandId, model.AddressId);
+            _logger.LogInformation("CreateOrder called with paymentMethod {PaymentMethod}, fullName {FullName}, phone {Phone}, address {Address}, brandId {BrandId}, addressId {AddressId}, discount {Discount}",
+                model.PaymentMethod, model.FullName, model.Phone, model.Address, model.BrandId, model.AddressId, model.Discount);
 
             var customerId = GetCustomerId();
             if (customerId == null)
@@ -103,6 +103,9 @@ namespace HakiBaVuong.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                var subtotal = cartItemsForBrand.Sum(i => i.Quantity * i.Product.PriceSell);
+                var totalAmount = Math.Max(0, subtotal - model.Discount);
+
                 var order = new Order
                 {
                     BrandId = model.BrandId,
@@ -112,7 +115,8 @@ namespace HakiBaVuong.Controllers
                     Address = model.Address,
                     Status = model.PaymentMethod == "BankCard" ? "Đã thanh toán" : "Chưa thanh toán",
                     DeliveryStatus = "Đợi giao hàng",
-                    TotalAmount = cartItemsForBrand.Sum(i => i.Quantity * i.Product.PriceSell),
+                    TotalAmount = totalAmount,
+                    Discount = model.Discount,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -145,7 +149,6 @@ namespace HakiBaVuong.Controllers
 
                 order.PaymentId = payment.PaymentId;
 
-                // Trừ số lượng tồn kho ngay khi đơn hàng được tạo
                 foreach (var item in cartItemsForBrand)
                 {
                     var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId);
@@ -159,12 +162,34 @@ namespace HakiBaVuong.Controllers
                     _context.Inventories.Update(inventory);
                 }
 
-                // Tăng LoyaltyPoints cho khách hàng
                 var customer = await _context.Customers.FindAsync(customerId);
                 if (customer != null)
                 {
-                    customer.LoyaltyPoints += 1;
-                    _context.Customers.Update(customer);
+                    var discountOption = new[] { 0m, 15000m, 200000m, 3000000m };
+                    if (discountOption.Contains(model.Discount))
+                    {
+                        var pointsToDeduct = model.Discount switch
+                        {
+                            15000m => 100,
+                            200000m => 1000,
+                            3000000m => 10000,
+                            _ => 0
+                        };
+
+                        if (customer.LoyaltyPoints < pointsToDeduct)
+                        {
+                            throw new Exception("Không đủ điểm khuyến mãi để áp dụng giảm giá.");
+                        }
+
+                        customer.LoyaltyPoints -= pointsToDeduct;
+                        customer.LoyaltyPoints += 1;
+                        _context.Customers.Update(customer);
+                    }
+                    else
+                    {
+                        customer.LoyaltyPoints += 1;
+                        _context.Customers.Update(customer);
+                    }
                 }
                 else
                 {
@@ -195,6 +220,7 @@ namespace HakiBaVuong.Controllers
                     DeliveryStatus = order.DeliveryStatus,
                     EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                     TotalAmount = order.TotalAmount,
+                    Discount = order.Discount,
                     CreatedAt = order.CreatedAt,
                     OrderItems = orderItems.Select(i => new OrderItemDTO
                     {
@@ -214,7 +240,7 @@ namespace HakiBaVuong.Controllers
                     }
                 };
 
-                _logger.LogInformation("Created order {OrderId} for customer {CustomerId} with LoyaltyPoints incremented to {LoyaltyPoints}", order.OrderId, customerId, customer.LoyaltyPoints);
+                _logger.LogInformation("Created order {OrderId} for customer {CustomerId} with LoyaltyPoints updated to {LoyaltyPoints}", order.OrderId, customerId, customer.LoyaltyPoints);
                 return CreatedAtAction(nameof(GetOrder), new { id = order.OrderId }, orderDto);
             }
             catch (Exception ex)
@@ -226,7 +252,6 @@ namespace HakiBaVuong.Controllers
             }
         }
 
-        // Các phương thức khác giữ nguyên
         [HttpGet("{id}")]
         public async Task<ActionResult<OrderDTO>> GetOrder(int id)
         {
@@ -263,6 +288,7 @@ namespace HakiBaVuong.Controllers
                 DeliveryStatus = order.DeliveryStatus,
                 EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                 TotalAmount = order.TotalAmount,
+                Discount = order.Discount,
                 CreatedAt = order.CreatedAt,
                 OrderItems = order.OrderItems.Select(i => new OrderItemDTO
                 {
@@ -331,6 +357,7 @@ namespace HakiBaVuong.Controllers
                 DeliveryStatus = o.DeliveryStatus,
                 EstimatedDeliveryDate = o.EstimatedDeliveryDate,
                 TotalAmount = o.TotalAmount,
+                Discount = o.Discount,
                 CreatedAt = o.CreatedAt,
                 OrderItems = o.OrderItems.Select(i => new OrderItemDTO
                 {
@@ -407,6 +434,7 @@ namespace HakiBaVuong.Controllers
                 DeliveryStatus = o.DeliveryStatus,
                 EstimatedDeliveryDate = o.EstimatedDeliveryDate,
                 TotalAmount = o.TotalAmount,
+                Discount = o.Discount,
                 CreatedAt = o.CreatedAt,
                 OrderItems = o.OrderItems.Select(i => new OrderItemDTO
                 {
@@ -493,6 +521,7 @@ namespace HakiBaVuong.Controllers
                 DeliveryStatus = order.DeliveryStatus,
                 EstimatedDeliveryDate = order.EstimatedDeliveryDate,
                 TotalAmount = order.TotalAmount,
+                Discount = order.Discount,
                 CreatedAt = order.CreatedAt,
                 OrderItems = order.OrderItems.Select(i => new OrderItemDTO
                 {
