@@ -129,7 +129,7 @@ namespace HakiBaVuong.Controllers
 
             var addressDto = new CustomerAddressDTO
             {
-                AddressId = address.AddressId, // Thêm trường AddressId
+                AddressId = address.AddressId,
                 CustomerId = address.CustomerId,
                 FullName = address.FullName,
                 Phone = address.Phone,

@@ -24,6 +24,21 @@ namespace HakiBaVuong.Controllers
             _environment = environment;
         }
 
+        [HttpGet("public")]
+        [AllowAnonymous]
+        public async Task<ActionResult<IEnumerable<Brand>>> GetAllPublic()
+        {
+            _logger.LogInformation("GetAllPublic brands called");
+
+            var brands = await _context.Brands
+                .Include(b => b.Owner)
+                .Include(b => b.Products)
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} brands for public access", brands.Count);
+            return Ok(brands);
+        }
+
         [HttpGet]
         [Authorize(Roles = "Admin,Staff")]
         public async Task<ActionResult<IEnumerable<Brand>>> GetAll()

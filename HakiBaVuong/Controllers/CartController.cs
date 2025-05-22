@@ -61,7 +61,7 @@ namespace HakiBaVuong.Controllers
                     Image = i.Product.Image,
                     Quantity = i.Quantity,
                     BrandId = i.Product.BrandId,
-                    BrandName = i.Product.Brand?.Name ?? "Thương hiệu không xác định" // Thêm BrandName
+                    BrandName = i.Product.Brand?.Name ?? "Thương hiệu không xác định" 
                 }).ToList()
             };
 

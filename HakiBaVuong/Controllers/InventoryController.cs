@@ -1,16 +1,16 @@
 ﻿using HakiBaVuong.DTOs;
 using HakiBaVuong.Models;
-using Microsoft.AspNetCore.Authorization; // Thêm để sử dụng Authorize
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using HakiBaVuong.Data;
-using System.Security.Claims; // Thêm để lấy userId từ token
+using System.Security.Claims; 
 
 namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin,Staff,InventoryManager")] // Thêm InventoryManager vào danh sách vai trò
+    [Authorize(Roles = "Admin,Staff,InventoryManager")] 
     public class InventoryController : ControllerBase
     {
         private readonly DataContext _context;

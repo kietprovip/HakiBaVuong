@@ -499,7 +499,6 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Nhân viên không thuộc thương hiệu hoặc chưa được duyệt." });
             }
 
-            // Remove permissions from StaffPermission table
             var staffPermissions = await _context.StaffPermissions
                 .Where(sp => sp.StaffId == userId)
                 .ToListAsync();
@@ -508,7 +507,6 @@ namespace HakiBaVuong.Controllers
                 _context.StaffPermissions.RemoveRange(staffPermissions);
             }
 
-            // Update user's BrandId and ApprovalStatus to null
             userToDelete.BrandId = null;
             userToDelete.ApprovalStatus = null;
             _context.Users.Update(userToDelete);

@@ -99,7 +99,7 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Nhân viên không tồn tại hoặc không hợp lệ." });
             }
 
-            // Validate the roles being assigned
+
             var validRoles = new List<string> { "Staff", "InventoryManager", "BrandManager" };
             if (dto.Roles.Any(role => !validRoles.Contains(role)))
             {
@@ -107,13 +107,13 @@ namespace HakiBaVuong.Controllers
                 return BadRequest(new { message = "Một hoặc nhiều vai trò không hợp lệ." });
             }
 
-            // Remove existing role assignments for this staff member
+
             var existingRoles = await _context.StaffPermissions
                 .Where(sp => sp.StaffId == dto.StaffId)
                 .ToListAsync();
             _context.StaffPermissions.RemoveRange(existingRoles);
 
-            // Assign new roles
+
             foreach (var role in dto.Roles)
             {
                 _context.StaffPermissions.Add(new StaffPermission { StaffId = dto.StaffId, Role = role });
@@ -139,7 +139,7 @@ namespace HakiBaVuong.Controllers
             var hasRole = await _context.StaffPermissions
                 .AnyAsync(sp => sp.StaffId == userId.Value && sp.Role == roleName);
 
-            // Brand owners have full access, no need to check roles
+
             var isBrandOwner = await IsBrandOwner(userId.Value);
             if (hasRole || isBrandOwner)
             {
@@ -154,6 +154,6 @@ namespace HakiBaVuong.Controllers
     public class AssignRoleDto
     {
         public int StaffId { get; set; }
-        public List<string> Roles { get; set; }  // List of roles like ["Staff", "InventoryManager"]
+        public List<string> Roles { get; set; }
     }
 }

@@ -41,7 +41,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("staff")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Removed BrandManager
+        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
         public async Task<ActionResult<IEnumerable<Product>>> GetAllForStaff()
         {
             try
@@ -172,7 +172,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("brand/{brandId}")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Removed BrandManager
+        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
         public async Task<ActionResult<IEnumerable<Product>>> GetByBrandId(int brandId)
         {
             _logger.LogInformation("GetByBrandId called for brand ID: {BrandId}", brandId);
@@ -318,7 +318,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Removed BrandManager
+        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
         public async Task<IActionResult> Update(int id, ProductDTO productDto)
         {
             _logger.LogInformation("Update product called for ID: {Id}", id);
@@ -396,7 +396,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Removed BrandManager
+        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
         public async Task<IActionResult> Delete(int id)
         {
             _logger.LogInformation("Delete product called for ID: {Id}", id);
@@ -477,7 +477,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPost("{id}/upload-image")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Removed BrandManager
+        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
         public async Task<IActionResult> UploadImage(int id, IFormFile file)
         {
             _logger.LogInformation("UploadImage called for product ID: {Id}", id);
