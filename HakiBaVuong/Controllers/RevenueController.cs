@@ -1,5 +1,6 @@
 ﻿using HakiBaVuong.Data;
 using HakiBaVuong.DTOs;
+using HakiBaVuong.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -78,6 +79,8 @@ namespace HakiBaVuong.Controllers
                 var orders = await query.ToListAsync();
 
                 var totalRevenue = orders.Sum(o => o.TotalAmount);
+                var totalProfit = orders.Sum(o =>
+                    o.TotalAmount - o.OrderItems.Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity));
 
                 var orderDtos = orders.Select(o => new OrderDTO
                 {
@@ -114,19 +117,20 @@ namespace HakiBaVuong.Controllers
                 {
                     BrandId = brandId,
                     TotalRevenue = totalRevenue,
+                    TotalProfit = totalProfit,
                     Orders = orderDtos,
                     StartDate = startDate,
                     EndDate = endDate
                 };
 
-                _logger.LogInformation("Retrieved revenue {TotalRevenue} for brand {BrandId} with {OrderCount} orders",
-                    totalRevenue, brandId, orders.Count);
+                _logger.LogInformation("Retrieved revenue {TotalRevenue}, profit {TotalProfit} for brand {BrandId} with {OrderCount} orders",
+                    totalRevenue, totalProfit, brandId, orders.Count);
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while fetching revenue for brand {BrandId}", brandId);
-                return StatusCode(500, new { message = "Lỗi khi tính doanh thu. Vui lòng thử lại sau." });
+                _logger.LogError(ex, "Error occurred while fetching revenue and profit for brand {BrandId}", brandId);
+                return StatusCode(500, new { message = "Lỗi khi tính doanh thu và lợi nhuận. Vui lòng thử lại sau." });
             }
         }
 
@@ -135,5 +139,15 @@ namespace HakiBaVuong.Controllers
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(userIdClaim, out int userId) ? userId : null;
         }
+    }
+
+    public class RevenueResponseDTO
+    {
+        public int BrandId { get; set; }
+        public decimal TotalRevenue { get; set; }
+        public decimal TotalProfit { get; set; }
+        public List<OrderDTO> Orders { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
     }
 }
