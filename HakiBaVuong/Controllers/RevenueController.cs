@@ -82,9 +82,16 @@ namespace HakiBaVuong.Controllers
                 var totalCost = orders.Sum(o => o.OrderItems.Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity));
                 var totalProfit = totalRevenue - totalCost;
 
+                // Log if PriceCost is missing or zero for all items
+                var hasMissingPriceCost = orders.Any(o => o.OrderItems.Any(i => i.Product.PriceCost == null || i.Product.PriceCost == 0));
+                if (hasMissingPriceCost)
+                {
+                    _logger.LogWarning("Missing or zero PriceCost values detected for some products in brand {BrandId}. TotalCost may be inaccurate.", brandId);
+                }
+
                 if (totalRevenue == totalProfit && totalRevenue > 0)
                 {
-                    _logger.LogWarning("TotalRevenue equals TotalProfit for brand {BrandId}. Possible missing PriceCost data.", brandId);
+                    _logger.LogWarning("TotalRevenue equals TotalProfit for brand {BrandId}. TotalCost is {TotalCost}. Verify PriceCost data.", brandId, totalCost);
                 }
 
                 var orderDtos = orders.Select(o => new OrderDTO
@@ -128,8 +135,8 @@ namespace HakiBaVuong.Controllers
                     EndDate = endDate
                 };
 
-                _logger.LogInformation("Retrieved revenue {TotalRevenue}, profit {TotalProfit} for brand {BrandId} with {OrderCount} orders",
-                    totalRevenue, totalProfit, brandId, orders.Count);
+                _logger.LogInformation("Retrieved revenue {TotalRevenue}, profit {TotalProfit}, cost {TotalCost} for brand {BrandId} with {OrderCount} orders",
+                    totalRevenue, totalProfit, totalCost, brandId, orders.Count);
                 return Ok(response);
             }
             catch (Exception ex)
@@ -146,13 +153,5 @@ namespace HakiBaVuong.Controllers
         }
     }
 
-    public class RevenueResponseDTO
-    {
-        public int BrandId { get; set; }
-        public decimal TotalRevenue { get; set; }
-        public decimal TotalProfit { get; set; }
-        public List<OrderDTO> Orders { get; set; }
-        public DateTime? StartDate { get; set; }
-        public DateTime? EndDate { get; set; }
-    }
+
 }
