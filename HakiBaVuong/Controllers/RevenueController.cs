@@ -3,7 +3,11 @@ using HakiBaVuong.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace HakiBaVuong.Controllers
 {
@@ -22,12 +26,13 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("brand/{brandId}")]
-        public async Task<ActionResult<RevenueDTO>> GetRevenueByBrand(int brandId)
+        public async Task<ActionResult<RevenueResponseDTO>> GetRevenueByBrand(int brandId, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
         {
-            _logger.LogInformation("GetRevenueByBrand called for brand {BrandId}", brandId);
+            _logger.LogInformation("GetRevenueByBrand called for brand {BrandId}, startDate: {StartDate}, endDate: {EndDate}",
+                brandId, startDate?.ToString("yyyy-MM-dd"), endDate?.ToString("yyyy-MM-dd"));
 
             var userId = GetUserId();
-            if (userId == null)
+            if (!userId.HasValue)
             {
                 _logger.LogWarning("Invalid userId from token");
                 return Unauthorized(new { message = "Token không hợp lệ." });
@@ -37,79 +42,92 @@ namespace HakiBaVuong.Controllers
             if (brand == null)
             {
                 _logger.LogWarning("Brand not found: {BrandId}", brandId);
-                return BadRequest(new { message = "Thương hiệu không tồn tại." });
+                return NotFound(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
             {
-                var user = await _context.Users.FindAsync(userId.Value);
-                if (user == null)
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value);
+                if (!hasPermission)
                 {
-                    _logger.LogWarning("User not found: {UserId}", userId);
-                    return NotFound(new { message = "Người dùng không tồn tại." });
-                }
-
-                int effectiveOwnerId;
-                if (user.BrandId.HasValue)
-                {
-                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
-                    if (userBrand == null)
-                    {
-                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
-                        return NotFound(new { message = "Thương hiệu không tồn tại." });
-                    }
-                    effectiveOwnerId = userBrand.OwnerId;
-                }
-                else
-                {
-                    effectiveOwnerId = userId.Value;
-                }
-
-                if (brand.OwnerId != effectiveOwnerId)
-                {
-                    _logger.LogWarning("User {UserId} does not have access to brand {BrandId}", userId, brandId);
+                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId.Value, brandId);
                     return Forbid();
                 }
             }
 
-            var orders = await _context.Orders
-                .Where(o => o.BrandId == brandId && o.Status == "Đã thanh toán")
-                .Include(o => o.OrderItems)
-                .ThenInclude(i => i.Product)
-                .ToListAsync();
-
-            decimal totalRevenue = 0;
-            decimal totalProfit = 0;
-            int totalItemsSold = 0;
-
-            foreach (var order in orders)
+            try
             {
-                foreach (var item in order.OrderItems)
+                var query = _context.Orders
+                    .Where(o => o.BrandId == brandId && o.Status == "Đã thanh toán")
+                    .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.Product)
+                    .Include(o => o.Payment)
+                    .AsQueryable();
+
+                if (startDate.HasValue)
                 {
-                    if (item.ProductId.HasValue)
-                    {
-                        totalRevenue += item.Price * item.Quantity;
-                        totalItemsSold += item.Quantity;
-                        if (item.Product?.PriceCost.HasValue == true)
-                        {
-                            totalProfit += (item.Price - item.Product.PriceCost.Value) * item.Quantity;
-                        }
-                    }
+                    query = query.Where(o => o.CreatedAt >= startDate.Value);
                 }
+
+                if (endDate.HasValue)
+                {
+                    query = query.Where(o => o.CreatedAt <= endDate.Value.AddDays(1).AddTicks(-1));
+                }
+
+                var orders = await query.ToListAsync();
+
+                var totalRevenue = orders.Sum(o => o.TotalAmount);
+
+                var orderDtos = orders.Select(o => new OrderDTO
+                {
+                    OrderId = o.OrderId,
+                    BrandId = o.BrandId,
+                    CustomerId = o.CustomerId,
+                    FullName = o.FullName,
+                    Phone = o.Phone,
+                    Address = o.Address,
+                    Status = o.Status,
+                    DeliveryStatus = o.DeliveryStatus,
+                    EstimatedDeliveryDate = o.EstimatedDeliveryDate,
+                    TotalAmount = o.TotalAmount,
+                    CreatedAt = o.CreatedAt,
+                    OrderItems = o.OrderItems.Select(i => new OrderItemDTO
+                    {
+                        ItemId = i.ItemId,
+                        OrderId = i.OrderId,
+                        ProductId = i.ProductId,
+                        ProductName = i.ProductName,
+                        Quantity = i.Quantity,
+                        Price = i.Price
+                    }).ToList(),
+                    Payment = o.Payment != null ? new PaymentDTO
+                    {
+                        PaymentId = o.Payment.PaymentId,
+                        Amount = o.Payment.Amount,
+                        Method = o.Payment.Method,
+                        Status = o.Payment.Status
+                    } : null
+                }).ToList();
+
+                var response = new RevenueResponseDTO
+                {
+                    BrandId = brandId,
+                    TotalRevenue = totalRevenue,
+                    Orders = orderDtos,
+                    StartDate = startDate,
+                    EndDate = endDate
+                };
+
+                _logger.LogInformation("Retrieved revenue {TotalRevenue} for brand {BrandId} with {OrderCount} orders",
+                    totalRevenue, brandId, orders.Count);
+                return Ok(response);
             }
-
-            var revenueDto = new RevenueDTO
+            catch (Exception ex)
             {
-                BrandId = brandId,
-                BrandName = brand.Name,
-                TotalRevenue = totalRevenue,
-                TotalProfit = totalProfit,
-                TotalItemsSold = totalItemsSold
-            };
-
-            _logger.LogInformation("Retrieved revenue stats for brand {BrandId}: Revenue={Revenue}, Profit={Profit}, ItemsSold={ItemsSold}",
-                brandId, totalRevenue, totalProfit, totalItemsSold);
-            return Ok(revenueDto);
+                _logger.LogError(ex, "Error occurred while fetching revenue for brand {BrandId}", brandId);
+                return StatusCode(500, new { message = "Lỗi khi tính doanh thu. Vui lòng thử lại sau." });
+            }
         }
 
         private int? GetUserId()

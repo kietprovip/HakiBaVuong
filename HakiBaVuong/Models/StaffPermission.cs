@@ -10,7 +10,7 @@ namespace HakiBaVuong.Models
 
         [Key, Column(Order = 2)]
         [Required]
-        public string Role { get; set; }  // Stores roles like "Staff", "InventoryManager", or "BrandManager"
+        public string Role { get; set; }
 
         [ForeignKey("StaffId")]
         public virtual User Staff { get; set; }
