@@ -79,8 +79,13 @@ namespace HakiBaVuong.Controllers
                 var orders = await query.ToListAsync();
 
                 var totalRevenue = orders.Sum(o => o.TotalAmount);
-                var totalProfit = orders.Sum(o =>
-                    o.TotalAmount - o.OrderItems.Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity));
+                var totalCost = orders.Sum(o => o.OrderItems.Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity));
+                var totalProfit = totalRevenue - totalCost;
+
+                if (totalRevenue == totalProfit && totalRevenue > 0)
+                {
+                    _logger.LogWarning("TotalRevenue equals TotalProfit for brand {BrandId}. Possible missing PriceCost data.", brandId);
+                }
 
                 var orderDtos = orders.Select(o => new OrderDTO
                 {
@@ -141,5 +146,13 @@ namespace HakiBaVuong.Controllers
         }
     }
 
-    
+    public class RevenueResponseDTO
+    {
+        public int BrandId { get; set; }
+        public decimal TotalRevenue { get; set; }
+        public decimal TotalProfit { get; set; }
+        public List<OrderDTO> Orders { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+    }
 }
