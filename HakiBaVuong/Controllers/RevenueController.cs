@@ -82,7 +82,7 @@ namespace HakiBaVuong.Controllers
                 var totalCost = orders.Sum(o => o.OrderItems.Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity));
                 var totalProfit = totalRevenue - totalCost;
 
-                // Log if PriceCost is missing or zero for all items
+
                 var hasMissingPriceCost = orders.Any(o => o.OrderItems.Any(i => i.Product.PriceCost == null || i.Product.PriceCost == 0));
                 if (hasMissingPriceCost)
                 {

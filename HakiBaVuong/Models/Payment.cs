@@ -15,11 +15,15 @@ namespace HakiBaVuong.Models
 
         [Required]
         public string Method { get; set; }
+        public string? TransactionId { get; set; }
+
+        public string? PaymentLink { get; set; }
 
         [Required]
         public string Status { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? UpdatedAt { get; set; }
 
         [ForeignKey("OrderId")]
         public Order Order { get; set; }

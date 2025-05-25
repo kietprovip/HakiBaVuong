@@ -45,7 +45,7 @@ namespace HakiBaVuong.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<StaffPermission>()
-                .HasKey(sp => new { sp.StaffId, sp.Role });  // Updated composite key
+                .HasKey(sp => new { sp.StaffId, sp.Role });
 
             modelBuilder.Entity<StaffPermission>()
                 .HasOne(sp => sp.Staff)
@@ -88,6 +88,11 @@ namespace HakiBaVuong.Data
                 .WithMany()
                 .HasForeignKey(oi => oi.ProductId)
                 .OnDelete(DeleteBehavior.SetNull);
+            modelBuilder.Entity<Payment>()
+                .HasOne(p => p.Order)
+                .WithOne(o => o.Payment)
+                .HasForeignKey<Payment>(p => p.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             base.OnModelCreating(modelBuilder);
         }
