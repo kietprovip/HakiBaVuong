@@ -11,10 +11,14 @@ namespace sexthu.Mappers
             CreateMap<User, UserDTO>().ReverseMap();
             CreateMap<Brand, BrandDTO>().ReverseMap();
             CreateMap<StaffPermission, StaffPermissionDTO>().ReverseMap();
-            CreateMap<Customer, CustomerDTO>().ReverseMap()
-                .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses));
+            CreateMap<Customer, CustomerDTO>()
+                .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses))
+                .ReverseMap();
             CreateMap<CustomerAddress, CustomerAddressDTO>().ReverseMap();
-            CreateMap<Product, ProductDTO>().ReverseMap();
+            CreateMap<Product, ProductDTO>()
+                .ForMember(dest => dest.ProductImages, opt => opt.MapFrom(src => src.ProductImages.Select(pi => pi.ImageUrl).ToList()))
+                .ReverseMap()
+                .ForMember(dest => dest.ProductImages, opt => opt.Ignore());
             CreateMap<Inventory, InventoryDTO>().ReverseMap();
 
             CreateMap<Order, OrderDTO>()
@@ -61,11 +65,16 @@ namespace sexthu.Mappers
             CreateMap<CartItem, CartItemDTO>()
                 .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
                 .ForMember(dest => dest.PriceSell, opt => opt.MapFrom(src => src.Product.PriceSell))
-                .ForMember(dest => dest.Image, opt => opt.MapFrom(src => src.Product.Image))
+                .ReverseMap();
+
+            CreateMap<Comment, CommentDTO>()
+                .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
+                .ForMember(dest => dest.CustomerName, opt => opt.MapFrom(src => src.Customer.Name))
                 .ReverseMap();
 
             CreateMap<PayOrderDTO, Payment>()
                 .ForMember(dest => dest.Method, opt => opt.Condition(src => !string.IsNullOrEmpty(src.PaymentMethod)));
+            CreateMap<Category, CategoryDTO>().ReverseMap();
         }
     }
 }

@@ -610,5 +610,7 @@ namespace HakiBaVuong.Controllers
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(userIdClaim, out int userId) ? userId : null;
         }
+
     }
+
 }

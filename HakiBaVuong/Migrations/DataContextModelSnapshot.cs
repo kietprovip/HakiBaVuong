@@ -103,6 +103,66 @@ namespace HakiBaVuong.Migrations
                     b.ToTable("CartItems");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.Category", b =>
+                {
+                    b.Property<int>("CategoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CategoryId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("CategoryId");
+
+                    b.ToTable("Categories");
+                });
+
+            modelBuilder.Entity("HakiBaVuong.Models.Comment", b =>
+                {
+                    b.Property<int>("CommentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CommentId"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("int");
+
+                    b.HasKey("CommentId");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("Comments");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.Customer", b =>
                 {
                     b.Property<int>("CustomerId")
@@ -262,8 +322,6 @@ namespace HakiBaVuong.Migrations
 
                     b.HasIndex("CustomerId1");
 
-                    b.HasIndex("PaymentId");
-
                     b.ToTable("Orders");
                 });
 
@@ -341,7 +399,8 @@ namespace HakiBaVuong.Migrations
 
                     b.HasKey("PaymentId");
 
-                    b.HasIndex("OrderId");
+                    b.HasIndex("OrderId")
+                        .IsUnique();
 
                     b.ToTable("Payments");
                 });
@@ -367,10 +426,6 @@ namespace HakiBaVuong.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("Image")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -380,6 +435,9 @@ namespace HakiBaVuong.Migrations
 
                     b.Property<decimal>("PriceSell")
                         .HasColumnType("decimal(10,2)");
+
+                    b.Property<float>("Rating")
+                        .HasColumnType("real");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -391,6 +449,52 @@ namespace HakiBaVuong.Migrations
                     b.HasIndex("BrandId1");
 
                     b.ToTable("Products");
+                });
+
+            modelBuilder.Entity("HakiBaVuong.Models.ProductCategory", b =>
+                {
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProductCategoryId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ProductId", "CategoryId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("ProductCategories");
+                });
+
+            modelBuilder.Entity("HakiBaVuong.Models.ProductImage", b =>
+                {
+                    b.Property<int>("ImageId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ImageId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ImageId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductImages");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.StaffPermission", b =>
@@ -495,6 +599,25 @@ namespace HakiBaVuong.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.Comment", b =>
+                {
+                    b.HasOne("HakiBaVuong.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HakiBaVuong.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.CustomerAddress", b =>
                 {
                     b.HasOne("HakiBaVuong.Models.Customer", "Customer")
@@ -538,15 +661,9 @@ namespace HakiBaVuong.Migrations
                         .WithMany("Orders")
                         .HasForeignKey("CustomerId1");
 
-                    b.HasOne("HakiBaVuong.Models.Payment", "Payment")
-                        .WithMany()
-                        .HasForeignKey("PaymentId");
-
                     b.Navigation("Brand");
 
                     b.Navigation("Customer");
-
-                    b.Navigation("Payment");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.OrderItem", b =>
@@ -574,8 +691,8 @@ namespace HakiBaVuong.Migrations
             modelBuilder.Entity("HakiBaVuong.Models.Payment", b =>
                 {
                     b.HasOne("HakiBaVuong.Models.Order", "Order")
-                        .WithMany()
-                        .HasForeignKey("OrderId")
+                        .WithOne("Payment")
+                        .HasForeignKey("HakiBaVuong.Models.Payment", "OrderId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -595,6 +712,36 @@ namespace HakiBaVuong.Migrations
                         .HasForeignKey("BrandId1");
 
                     b.Navigation("Brand");
+                });
+
+            modelBuilder.Entity("HakiBaVuong.Models.ProductCategory", b =>
+                {
+                    b.HasOne("HakiBaVuong.Models.Category", "Category")
+                        .WithMany("ProductCategories")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HakiBaVuong.Models.Product", "Product")
+                        .WithMany("ProductCategories")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("HakiBaVuong.Models.ProductImage", b =>
+                {
+                    b.HasOne("HakiBaVuong.Models.Product", "Product")
+                        .WithMany("ProductImages")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.StaffPermission", b =>
@@ -629,6 +776,11 @@ namespace HakiBaVuong.Migrations
                     b.Navigation("Items");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.Category", b =>
+                {
+                    b.Navigation("ProductCategories");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.Customer", b =>
                 {
                     b.Navigation("Addresses");
@@ -639,6 +791,16 @@ namespace HakiBaVuong.Migrations
             modelBuilder.Entity("HakiBaVuong.Models.Order", b =>
                 {
                     b.Navigation("OrderItems");
+
+                    b.Navigation("Payment")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("HakiBaVuong.Models.Product", b =>
+                {
+                    b.Navigation("ProductCategories");
+
+                    b.Navigation("ProductImages");
                 });
 #pragma warning restore 612, 618
         }

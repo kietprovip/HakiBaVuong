@@ -9,7 +9,7 @@ namespace HakiBaVuong.Data
 
         public DbSet<User> Users { get; set; }
         public DbSet<Brand> Brands { get; set; }
-        public DbSet<StaffPermission> StaffPermissions { get; set; }  // Permission is removed
+        public DbSet<StaffPermission> StaffPermissions { get; set; }
         public DbSet<Customer> Customers { get; set; }
         public DbSet<CustomerAddress> CustomerAddresses { get; set; }
         public DbSet<Product> Products { get; set; }
@@ -19,6 +19,10 @@ namespace HakiBaVuong.Data
         public DbSet<Payment> Payments { get; set; }
         public DbSet<Cart> Carts { get; set; }
         public DbSet<CartItem> CartItems { get; set; }
+        public DbSet<Comment> Comments { get; set; }
+        public DbSet<ProductImage> ProductImages { get; set; }
+        public DbSet<Category> Categories { get; set; }
+        public DbSet<ProductCategory> ProductCategories { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -88,10 +92,44 @@ namespace HakiBaVuong.Data
                 .WithMany()
                 .HasForeignKey(oi => oi.ProductId)
                 .OnDelete(DeleteBehavior.SetNull);
+
             modelBuilder.Entity<Payment>()
                 .HasOne(p => p.Order)
                 .WithOne(o => o.Payment)
                 .HasForeignKey<Payment>(p => p.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ProductImage>()
+                .HasOne(pi => pi.Product)
+                .WithMany(p => p.ProductImages)
+                .HasForeignKey(pi => pi.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Comment>()
+                .HasOne(c => c.Product)
+                .WithMany()
+                .HasForeignKey(c => c.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Comment>()
+                .HasOne(c => c.Customer)
+                .WithMany()
+                .HasForeignKey(c => c.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ProductCategory>()
+                .HasKey(pc => new { pc.ProductId, pc.CategoryId });
+
+            modelBuilder.Entity<ProductCategory>()
+                .HasOne(pc => pc.Product)
+                .WithMany(p => p.ProductCategories)
+                .HasForeignKey(pc => pc.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ProductCategory>()
+                .HasOne(pc => pc.Category)
+                .WithMany(c => c.ProductCategories)
+                .HasForeignKey(pc => pc.CategoryId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             base.OnModelCreating(modelBuilder);

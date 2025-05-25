@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using HakiBaVuong.Data;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace HakiBaVuong.Controllers
 {
@@ -25,23 +26,50 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Product>>> GetAll([FromQuery] int? brandId)
+        public async Task<ActionResult<IEnumerable<ProductDTO>>> GetAll([FromQuery] int? brandId, [FromQuery] List<int> categoryIds)
         {
-            _logger.LogInformation("GetAll products called with brandId: {BrandId}", brandId);
+            _logger.LogInformation("GetAll products called with brandId: {BrandId}, categoryIds: {CategoryIds}", brandId, categoryIds);
 
-            var query = _context.Products.AsQueryable();
+            var query = _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.ProductImages)
+                .Include(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .AsQueryable();
+
             if (brandId.HasValue)
             {
                 query = query.Where(p => p.BrandId == brandId.Value);
             }
 
-            var products = await query.Include(p => p.Brand).ToListAsync();
+            if (categoryIds?.Any() == true)
+            {
+                query = query.Where(p => p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)));
+            }
+
+            var products = await query
+                .Select(p => new ProductDTO
+                {
+                    ProductId = p.ProductId,
+                    BrandId = p.BrandId,
+                    Name = p.Name,
+                    Description = p.Description,
+                    PriceSell = p.PriceSell,
+                    PriceCost = p.PriceCost,
+                    Rating = p.Rating,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                    CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                })
+                .ToListAsync();
+
             _logger.LogInformation("Retrieved {Count} products", products.Count);
             return Ok(products);
         }
 
         [HttpGet("staff")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<ActionResult<IEnumerable<Product>>> GetAllForStaff()
         {
             try
@@ -74,7 +102,7 @@ namespace HakiBaVuong.Controllers
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error occurred while fetching all products for Admin.");
-                        return StatusCode(500, new { message = "Lỗi khi lấy danh sách sản phẩm cho Admin. Vui lòng thử lại sau." });
+                        return StatusCode(500, new { message = "Lỗi khi lấy danh sách sản phẩm cho Admin." });
                     }
                 }
 
@@ -126,13 +154,13 @@ namespace HakiBaVuong.Controllers
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error occurred while fetching products for staff user {UserId}", userId);
-                    return StatusCode(500, new { message = "Lỗi khi lấy danh sách sản phẩm cho Staff. Vui lòng thử lại sau." });
+                    return StatusCode(500, new { message = "Lỗi khi lấy danh sách sản phẩm cho Staff." });
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error in GetAllForStaff.");
-                return StatusCode(500, new { message = "Đã xảy ra lỗi không xác định. Vui lòng thử lại sau." });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi không xác định." });
             }
         }
 
@@ -148,7 +176,9 @@ namespace HakiBaVuong.Controllers
                 query = query.Where(p => p.BrandId == brandId.Value);
             }
 
-            var products = await query.Include(p => p.Brand).ToListAsync();
+            var products = await query
+                .Include(p => p.Brand)
+                .ToListAsync();
             _logger.LogInformation("Retrieved {Count} products for customer", products.Count);
             return Ok(products);
         }
@@ -161,6 +191,7 @@ namespace HakiBaVuong.Controllers
 
             var product = await _context.Products
                 .Include(p => p.Brand)
+                .Include(p => p.ProductImages)
                 .FirstOrDefaultAsync(p => p.ProductId == id);
             if (product == null)
             {
@@ -172,7 +203,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("brand/{brandId}")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<ActionResult<IEnumerable<Product>>> GetByBrandId(int brandId)
         {
             _logger.LogInformation("GetByBrandId called for brand ID: {BrandId}", brandId);
@@ -226,13 +257,14 @@ namespace HakiBaVuong.Controllers
             var products = await _context.Products
                 .Where(p => p.BrandId == brandId)
                 .Include(p => p.Brand)
+                .Include(p => p.ProductImages)
                 .ToListAsync();
             _logger.LogInformation("Retrieved {Count} products for brand ID: {BrandId}", products.Count, brandId);
             return Ok(products);
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Removed BrandManager
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<ActionResult<Product>> Create(ProductDTO productDto)
         {
             _logger.LogInformation("Create product called with name: {Name}, brandId: {BrandId}", productDto.Name, productDto.BrandId);
@@ -296,7 +328,7 @@ namespace HakiBaVuong.Controllers
                 Description = productDto.Description,
                 PriceSell = productDto.PriceSell,
                 PriceCost = productDto.PriceCost,
-                Image = productDto.Image,
+                Rating = 0,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -318,7 +350,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<IActionResult> Update(int id, ProductDTO productDto)
         {
             _logger.LogInformation("Update product called for ID: {Id}", id);
@@ -387,7 +419,6 @@ namespace HakiBaVuong.Controllers
             product.PriceSell = productDto.PriceSell;
             product.PriceCost = productDto.PriceCost;
             product.BrandId = productDto.BrandId;
-            product.Image = productDto.Image;
             product.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -396,12 +427,14 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<IActionResult> Delete(int id)
         {
             _logger.LogInformation("Delete product called for ID: {Id}", id);
 
-            var product = await _context.Products.FindAsync(id);
+            var product = await _context.Products
+                .Include(p => p.ProductImages)
+                .FirstOrDefaultAsync(p => p.ProductId == id);
             if (product == null)
             {
                 _logger.LogWarning("Product not found: {Id}", id);
@@ -460,14 +493,25 @@ namespace HakiBaVuong.Controllers
                 _context.Inventories.Remove(inventory);
             }
 
-            if (!string.IsNullOrEmpty(product.Image))
+            if (product.ProductImages != null)
             {
-                var imagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
-                if (System.IO.File.Exists(imagePath))
+                foreach (var image in product.ProductImages)
                 {
-                    System.IO.File.Delete(imagePath);
-                    _logger.LogInformation("Deleted image for product ID: {Id}", id);
+                    var imagePath = Path.Combine(_environment.ContentRootPath, image.ImageUrl.TrimStart('/'));
+                    if (System.IO.File.Exists(imagePath))
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(imagePath);
+                            _logger.LogInformation("Deleted image {ImageUrl} for product ID: {Id}", image.ImageUrl, id);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to delete image {ImageUrl} for product ID: {Id}", image.ImageUrl, id);
+                        }
+                    }
                 }
+                _context.ProductImages.RemoveRange(product.ProductImages);
             }
 
             _context.Products.Remove(product);
@@ -476,8 +520,8 @@ namespace HakiBaVuong.Controllers
             return NoContent();
         }
 
-        [HttpPost("{id}/upload-image")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
+        [HttpPost("{id}/images")]
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<IActionResult> UploadImage(int id, IFormFile file)
         {
             _logger.LogInformation("UploadImage called for product ID: {Id}", id);
@@ -562,30 +606,231 @@ namespace HakiBaVuong.Controllers
                 Directory.CreateDirectory(uploadsFolder);
             }
 
-            var fileName = $"product_{id}{extension}";
+            var imageCount = await _context.ProductImages.CountAsync(pi => pi.ProductId == id);
+            var fileName = $"product_{id}_{imageCount + 1}{extension}";
             var filePath = Path.Combine(uploadsFolder, fileName);
-
-            if (!string.IsNullOrEmpty(product.Image))
-            {
-                var oldImagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
-                if (System.IO.File.Exists(oldImagePath))
-                {
-                    System.IO.File.Delete(oldImagePath);
-                    _logger.LogInformation("Deleted old image for product ID: {Id}", id);
-                }
-            }
 
             using (var stream = new FileStream(filePath, FileMode.Create))
             {
                 await file.CopyToAsync(stream);
             }
 
-            product.Image = $"/images/{fileName}";
+            var productImage = new ProductImage
+            {
+                ProductId = id,
+                ImageUrl = $"/Images/{fileName}",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.ProductImages.Add(productImage);
             product.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Uploaded image for product ID: {Id}, path: {ImagePath}", id, product.Image);
-            return Ok(new { message = "Tải ảnh lên thành công.", imageUrl = product.Image });
+            _logger.LogInformation("Uploaded image for product ID: {Id}, path: {ImageUrl}", id, productImage.ImageUrl);
+            return Ok(new { message = "Tải ảnh lên thành công.", imageUrl = productImage.ImageUrl });
+        }
+
+        [HttpDelete("images/{imageId}")]
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
+        public async Task<IActionResult> DeleteImage(int imageId)
+        {
+            _logger.LogInformation("DeleteImage called for image ID: {ImageId}", imageId);
+
+            var image = await _context.ProductImages
+                .Include(pi => pi.Product)
+                .FirstOrDefaultAsync(pi => pi.ImageId == imageId);
+            if (image == null)
+            {
+                _logger.LogWarning("Image not found: {ImageId}", imageId);
+                return NotFound(new { message = "Ảnh không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") || User.IsInRole("InventoryManager"))
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    _logger.LogWarning("Cannot determine userId from token.");
+                    return BadRequest(new { message = "Không thể xác định userId từ token." });
+                }
+
+                var user = await _context.Users.FindAsync(userId);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found: {UserId}", userId);
+                    return NotFound(new { message = "Người dùng không tồn tại." });
+                }
+
+                var brand = await _context.Brands.FindAsync(image.Product.BrandId);
+                if (brand == null)
+                {
+                    _logger.LogWarning("Brand not found for product ID: {ProductId}", image.ProductId);
+                    return NotFound(new { message = "Thương hiệu không tồn tại." });
+                }
+
+                int effectiveOwnerId;
+                if (user.BrandId.HasValue)
+                {
+                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
+                    if (userBrand == null)
+                    {
+                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
+                        return NotFound(new { message = "Thương hiệu không tồn tại." });
+                    }
+                    effectiveOwnerId = userBrand.OwnerId;
+                }
+                else
+                {
+                    effectiveOwnerId = userId;
+                }
+
+                if (brand.OwnerId != effectiveOwnerId)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, image.ProductId);
+                    return Forbid();
+                }
+            }
+
+            var imagePath = Path.Combine(_environment.ContentRootPath, image.ImageUrl.TrimStart('/'));
+            if (System.IO.File.Exists(imagePath))
+            {
+                System.IO.File.Delete(imagePath);
+                _logger.LogInformation("Deleted image {ImageUrl} for product ID: {ProductId}", image.ImageUrl, image.ProductId);
+            }
+
+            _context.ProductImages.Remove(image);
+            image.Product.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Deleted image ID: {ImageId}", imageId);
+            return NoContent();
+        }
+
+        [HttpPost("{id}/comments")]
+        [Authorize(Roles = "Customer")]
+        public async Task<IActionResult> CreateComment(int id, [FromBody] CommentDTO commentDto)
+        {
+            _logger.LogInformation("CreateComment called for product ID: {Id}", id);
+
+            var product = await _context.Products.FindAsync(id);
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {Id}", id);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(customerIdClaim) || !int.TryParse(customerIdClaim, out int customerId))
+            {
+                _logger.LogWarning("Cannot determine customerId from token.");
+                return BadRequest(new { message = "Không thể xác định customerId từ token." });
+            }
+
+            var customer = await _context.Customers.FindAsync(customerId);
+            if (customer == null)
+            {
+                _logger.LogWarning("Customer not found: {CustomerId}", customerId);
+                return NotFound(new { message = "Khách hàng không tồn tại." });
+            }
+
+            if (string.IsNullOrWhiteSpace(commentDto.Content))
+            {
+                _logger.LogWarning("Comment content is empty for product ID: {Id}", id);
+                return BadRequest(new { message = "Nội dung bình luận không được để trống." });
+            }
+
+            if (commentDto.Rating < 1 || commentDto.Rating > 5)
+            {
+                _logger.LogWarning("Invalid rating {Rating} for product ID: {Id}", commentDto.Rating, id);
+                return BadRequest(new { message = "Đánh giá phải từ 1 đến 5 sao." });
+            }
+
+            var comment = new Comment
+            {
+                ProductId = id,
+                CustomerId = customerId,
+                Content = commentDto.Content,
+                Rating = commentDto.Rating,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Comments.Add(comment);
+            await _context.SaveChangesAsync();
+
+            var avgRating = await _context.Comments
+                .Where(c => c.ProductId == id)
+                .AverageAsync(c => (float?)c.Rating) ?? 0;
+            product.Rating = (float)Math.Round(avgRating, 1);
+            product.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Created comment ID: {CommentId} for product ID: {Id}, new rating: {Rating}", comment.CommentId, id, product.Rating);
+            return CreatedAtAction(nameof(GetComments), new { id }, comment);
+        }
+
+        [HttpGet("{id}/comments")]
+        public async Task<ActionResult<IEnumerable<Comment>>> GetComments(int id)
+        {
+            _logger.LogInformation("GetComments called for product ID: {Id}", id);
+
+            var product = await _context.Products.FindAsync(id);
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {Id}", id);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            var comments = await _context.Comments
+                .Where(c => c.ProductId == id)
+                .Include(c => c.Customer)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} comments for product ID: {Id}", comments.Count, id);
+            return Ok(comments);
+
+        }
+        [HttpGet("related/{productId}")]
+        public async Task<ActionResult<IEnumerable<ProductDTO>>> GetRelatedProducts(int productId)
+        {
+            _logger.LogInformation("GetRelatedProducts called for product ID: {ProductId}", productId);
+
+            var product = await _context.Products
+                .Include(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .FirstOrDefaultAsync(p => p.ProductId == productId);
+
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {ProductId}", productId);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            var categoryIds = product.ProductCategories.Select(pc => pc.CategoryId).ToList();
+            var relatedProducts = await _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.ProductImages)
+                .Include(p => p.ProductCategories)
+                .Where(p => p.ProductId != productId && p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)))
+                .Take(5) // Lấy tối đa 5 sản phẩm liên quan
+                .Select(p => new ProductDTO
+                {
+                    ProductId = p.ProductId,
+                    BrandId = p.BrandId,
+                    Name = p.Name,
+                    Description = p.Description,
+                    PriceSell = p.PriceSell,
+                    PriceCost = p.PriceCost,
+                    Rating = p.Rating,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                    CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                })
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} related products for product ID: {ProductId}", relatedProducts.Count, productId);
+            return Ok(relatedProducts);
         }
     }
 }

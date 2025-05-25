@@ -58,10 +58,9 @@ namespace HakiBaVuong.Controllers
                     ProductId = i.ProductId,
                     ProductName = i.Product.Name,
                     PriceSell = i.Product.PriceSell,
-                    Image = i.Product.Image,
-                    Quantity = i.Quantity,
+                    Image = i.Product.ProductImages?.FirstOrDefault()?.ImageUrl ?? "",
                     BrandId = i.Product.BrandId,
-                    BrandName = i.Product.Brand?.Name ?? "Thương hiệu không xác định" 
+                    BrandName = i.Product.Brand?.Name ?? "Thương hiệu không xác định"
                 }).ToList()
             };
 
