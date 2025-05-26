@@ -31,10 +31,10 @@ builder.Services.AddCors(options =>
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 })
-.AddCookie()
 .AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
@@ -48,19 +48,13 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
     };
 })
-.AddGoogle(googleOptions =>
+.AddCookie()
+.AddGoogle(options =>
 {
-    var googleAuthNSection = builder.Configuration.GetSection("Authentication:Google");
-    googleOptions.ClientId = googleAuthNSection["ClientId"];
-    googleOptions.ClientSecret = googleAuthNSection["ClientSecret"];
-    googleOptions.CallbackPath = "/signin-google";
-})
-.AddFacebook(facebookOptions =>
-{
-    var fbAuthNSection = builder.Configuration.GetSection("Authentication:Facebook");
-    facebookOptions.AppId = fbAuthNSection["AppId"];
-    facebookOptions.AppSecret = fbAuthNSection["AppSecret"];
-    facebookOptions.CallbackPath = "/signin-facebook";
+    var googleSection = builder.Configuration.GetSection("Authentication:Google");
+    options.ClientId = googleSection["ClientId"];
+    options.ClientSecret = googleSection["ClientSecret"];
+    options.CallbackPath = "/signin-google";
 });
 
 
