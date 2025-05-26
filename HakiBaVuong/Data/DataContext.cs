@@ -23,7 +23,7 @@ namespace HakiBaVuong.Data
         public DbSet<ProductImage> ProductImages { get; set; }
         public DbSet<Category> Categories { get; set; }
         public DbSet<ProductCategory> ProductCategories { get; set; }
-
+        public DbSet<ViewedProduct> ViewedProducts { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Product>()
@@ -130,6 +130,20 @@ namespace HakiBaVuong.Data
                 .HasOne(pc => pc.Category)
                 .WithMany(c => c.ProductCategories)
                 .HasForeignKey(pc => pc.CategoryId)
+                .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<ViewedProduct>()
+                .HasKey(vp => new { vp.CustomerId, vp.ProductId });
+
+            modelBuilder.Entity<ViewedProduct>()
+                .HasOne(vp => vp.Customer)
+                .WithMany(c => c.ViewedProducts)
+                .HasForeignKey(vp => vp.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ViewedProduct>()
+                .HasOne(vp => vp.Product)
+                .WithMany()
+                .HasForeignKey(vp => vp.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             base.OnModelCreating(modelBuilder);

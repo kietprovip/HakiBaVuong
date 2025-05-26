@@ -49,7 +49,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 return Task.CompletedTask;
             }
         };
-    });
+    })
+    .AddCookie()
+    .AddGoogle(googleOptions =>
+    {
+        var googleAuthNSection = builder.Configuration.GetSection("Authentication:Google");
+        googleOptions.ClientId = googleAuthNSection["ClientId"];
+        googleOptions.ClientSecret = googleAuthNSection["ClientSecret"];
+        googleOptions.CallbackPath = "/signin-google"; // Phải khớp với Authorized redirect URI trong Google Cloud Console
+    })
+    .AddFacebook(facebookOptions =>
+    {
+        var fbAuthNSection = builder.Configuration.GetSection("Authentication:Facebook");
+        facebookOptions.AppId = fbAuthNSection["AppId"];
+        facebookOptions.AppSecret = fbAuthNSection["AppSecret"];
+        facebookOptions.CallbackPath = "/signin-facebook"; // Phải khớp với redirect URI trong Facebook Developer Console
+    }); 
 
 
 builder.Services.AddAuthorization();

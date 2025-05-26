@@ -17,5 +17,7 @@ namespace HakiBaVuong.Models
         public virtual ICollection<CustomerAddress> Addresses { get; set; }
         public virtual ICollection<Order> Orders { get; set; }
         public bool IsEmailVerified { get; set; } = false;
+        public virtual ICollection<Comment> Comments { get; set; } = new List<Comment>();
+        public virtual ICollection<ViewedProduct> ViewedProducts { get; set; } = new List<ViewedProduct>();
     }
 }

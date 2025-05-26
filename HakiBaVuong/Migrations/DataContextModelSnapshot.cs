@@ -148,6 +148,9 @@ namespace HakiBaVuong.Migrations
                     b.Property<int>("CustomerId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CustomerId1")
+                        .HasColumnType("int");
+
                     b.Property<int>("ProductId")
                         .HasColumnType("int");
 
@@ -157,6 +160,8 @@ namespace HakiBaVuong.Migrations
                     b.HasKey("CommentId");
 
                     b.HasIndex("CustomerId");
+
+                    b.HasIndex("CustomerId1");
 
                     b.HasIndex("ProductId");
 
@@ -558,6 +563,27 @@ namespace HakiBaVuong.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.ViewedProduct", b =>
+                {
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ViewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ViewedProductId")
+                        .HasColumnType("int");
+
+                    b.HasKey("CustomerId", "ProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ViewedProducts");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.Brand", b =>
                 {
                     b.HasOne("HakiBaVuong.Models.User", "Owner")
@@ -606,6 +632,10 @@ namespace HakiBaVuong.Migrations
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("HakiBaVuong.Models.Customer", null)
+                        .WithMany("Comments")
+                        .HasForeignKey("CustomerId1");
 
                     b.HasOne("HakiBaVuong.Models.Product", "Product")
                         .WithMany()
@@ -764,6 +794,25 @@ namespace HakiBaVuong.Migrations
                     b.Navigation("Brand");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.ViewedProduct", b =>
+                {
+                    b.HasOne("HakiBaVuong.Models.Customer", "Customer")
+                        .WithMany("ViewedProducts")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HakiBaVuong.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.Brand", b =>
                 {
                     b.Navigation("Orders");
@@ -785,7 +834,11 @@ namespace HakiBaVuong.Migrations
                 {
                     b.Navigation("Addresses");
 
+                    b.Navigation("Comments");
+
                     b.Navigation("Orders");
+
+                    b.Navigation("ViewedProducts");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.Order", b =>

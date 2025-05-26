@@ -42,7 +42,7 @@ namespace HakiBaVuong.Controllers
                 query = query.Where(p => p.BrandId == brandId.Value);
             }
 
-            if (categoryIds?.Any() == true)
+            if (categoryIds != null && categoryIds.Any())
             {
                 query = query.Where(p => p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)));
             }
@@ -788,8 +788,8 @@ namespace HakiBaVuong.Controllers
 
             _logger.LogInformation("Retrieved {Count} comments for product ID: {Id}", comments.Count, id);
             return Ok(comments);
-
         }
+
         [HttpGet("related/{productId}")]
         public async Task<ActionResult<IEnumerable<ProductDTO>>> GetRelatedProducts(int productId)
         {
@@ -812,7 +812,7 @@ namespace HakiBaVuong.Controllers
                 .Include(p => p.ProductImages)
                 .Include(p => p.ProductCategories)
                 .Where(p => p.ProductId != productId && p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)))
-                .Take(5) // Lấy tối đa 5 sản phẩm liên quan
+                .Take(10)
                 .Select(p => new ProductDTO
                 {
                     ProductId = p.ProductId,
@@ -831,6 +831,224 @@ namespace HakiBaVuong.Controllers
 
             _logger.LogInformation("Retrieved {Count} related products for product ID: {ProductId}", relatedProducts.Count, productId);
             return Ok(relatedProducts);
+        }
+
+        [HttpGet("suggest")]
+        [Authorize]
+        public async Task<ActionResult<IEnumerable<ProductDTO>>> Suggest([FromQuery] string query, [FromQuery] int? brandId, [FromQuery] List<int> categoryIds)
+        {
+            _logger.LogInformation("Suggest products called with query: {Query}, brandId: {BrandId}, categoryIds: {CategoryIds}", query, brandId, categoryIds);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var queryLower = query?.ToLower() ?? "";
+            var queryable = _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.ProductImages)
+                .Include(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .AsQueryable();
+
+ 
+            if (categoryIds != null && categoryIds.Any())
+            {
+                queryable = queryable.Where(p => p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)));
+            }
+
+            var products = await queryable
+                .Where(p => string.IsNullOrEmpty(queryLower) || p.Name.ToLower().Contains(queryLower) || p.Brand.Name.ToLower().Contains(queryLower))
+                .Where(p => !brandId.HasValue || p.BrandId == brandId.Value)
+                .OrderByDescending(p => p.Rating)
+                .Take(5)
+                .Select(p => new ProductDTO
+                {
+                    ProductId = p.ProductId,
+                    BrandId = p.BrandId,
+                    Name = p.Name,
+                    Description = p.Description,
+                    PriceSell = p.PriceSell,
+                    PriceCost = p.PriceCost,
+                    Rating = p.Rating,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                    CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                })
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} suggested products", products.Count);
+            return Ok(products);
+        }
+
+        [HttpGet("home")]
+        [Authorize]
+        public async Task<ActionResult<IEnumerable<ProductDTO>>> GetHomeRecommendations()
+        {
+            _logger.LogInformation("GetHomeRecommendations called");
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var viewedProducts = await _context.ViewedProducts
+                .Where(vp => vp.CustomerId == customerId)
+                .Select(vp => vp.ProductId)
+                .ToListAsync();
+
+            var query = _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.ProductImages)
+                .Include(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .AsQueryable();
+
+
+            var recommendedByViewed = viewedProducts.Any()
+                ? await query.Where(p => viewedProducts.Contains(p.ProductId))
+                    .OrderByDescending(p => p.Rating)
+                    .Take(3)
+                    .Select(p => new ProductDTO
+                    {
+                        ProductId = p.ProductId,
+                        BrandId = p.BrandId,
+                        Name = p.Name,
+                        Description = p.Description,
+                        PriceSell = p.PriceSell,
+                        PriceCost = p.PriceCost,
+                        Rating = p.Rating,
+                        CreatedAt = p.CreatedAt,
+                        UpdatedAt = p.UpdatedAt,
+                        ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                        CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                    })
+                    .ToListAsync()
+                : new List<ProductDTO>();
+
+
+            var viewedProductsWithCategories = await _context.ViewedProducts
+                .Where(vp => vp.CustomerId == customerId)
+                .Include(vp => vp.Product)
+                .ThenInclude(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .ToListAsync();
+
+            var viewedCategories = viewedProductsWithCategories
+                .SelectMany(vp => vp.Product.ProductCategories)
+                .Select(pc => pc.CategoryId)
+                .Distinct()
+                .ToList();
+
+            var recommendedByCategory = viewedCategories.Any()
+                ? await query.Where(p => p.ProductCategories.Any(pc => viewedCategories.Contains(pc.CategoryId)) && !viewedProducts.Contains(p.ProductId))
+                    .OrderByDescending(p => p.Rating)
+                    .Take(3)
+                    .Select(p => new ProductDTO
+                    {
+                        ProductId = p.ProductId,
+                        BrandId = p.BrandId,
+                        Name = p.Name,
+                        Description = p.Description,
+                        PriceSell = p.PriceSell,
+                        PriceCost = p.PriceCost,
+                        Rating = p.Rating,
+                        CreatedAt = p.CreatedAt,
+                        UpdatedAt = p.UpdatedAt,
+                        ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                        CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                    })
+                    .ToListAsync()
+                : new List<ProductDTO>();
+
+ 
+            var viewedBrands = await _context.ViewedProducts
+                .Where(vp => vp.CustomerId == customerId)
+                .Include(vp => vp.Product)
+                .Select(vp => vp.Product.BrandId)
+                .Distinct()
+                .ToListAsync();
+
+            var recommendedByBrand = viewedBrands.Any()
+                ? await query.Where(p => viewedBrands.Contains(p.BrandId) && !viewedProducts.Contains(p.ProductId))
+                    .OrderByDescending(p => p.Rating)
+                    .Take(3)
+                    .Select(p => new ProductDTO
+                    {
+                        ProductId = p.ProductId,
+                        BrandId = p.BrandId,
+                        Name = p.Name,
+                        Description = p.Description,
+                        PriceSell = p.PriceSell,
+                        PriceCost = p.PriceCost,
+                        Rating = p.Rating,
+                        CreatedAt = p.CreatedAt,
+                        UpdatedAt = p.UpdatedAt,
+                        ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                        CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                    })
+                    .ToListAsync()
+                : new List<ProductDTO>();
+
+            var allRecommendations = recommendedByViewed
+                .Concat(recommendedByCategory)
+                .Concat(recommendedByBrand)
+                .DistinctBy(p => p.ProductId)
+                .Take(9)
+                .ToList();
+
+            _logger.LogInformation("Retrieved {Count} home recommendations for customer {CustomerId}", allRecommendations.Count, customerId);
+            return Ok(allRecommendations);
+        }
+
+        [HttpPost("{productId}/view")]
+        [Authorize]
+        public async Task<IActionResult> MarkAsViewed(int productId)
+        {
+            _logger.LogInformation("MarkAsViewed called for product ID: {ProductId}", productId);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var product = await _context.Products.FindAsync(productId);
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {ProductId}", productId);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            var viewed = await _context.ViewedProducts
+                .FirstOrDefaultAsync(vp => vp.CustomerId == customerId && vp.ProductId == productId);
+
+            if (viewed == null)
+            {
+                var viewedProduct = new ViewedProduct
+                {
+                    CustomerId = customerId.Value,
+                    ProductId = productId
+                };
+                _context.ViewedProducts.Add(viewedProduct);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Marked product {ProductId} as viewed by customer {CustomerId}", productId, customerId);
+            }
+
+            return Ok(new { message = "Đã ghi nhận sản phẩm đã xem." });
+        }
+
+        private int? GetCustomerId()
+        {
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(customerIdClaim, out int customerId) ? customerId : null;
         }
     }
 }

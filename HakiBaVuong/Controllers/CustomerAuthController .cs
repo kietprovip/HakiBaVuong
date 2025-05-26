@@ -12,6 +12,9 @@ using AutoMapper;
 using System.Net.Mail;
 using System.Net;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Authentication;
 
 [Route("api/auth")]
 [ApiController]
@@ -237,7 +240,57 @@ public class CustomerAuthController : ControllerBase
             await smtp.SendMailAsync(message);
         }
     }
+    [HttpGet("login-google")]
+    public IActionResult LoginWithGoogle()
+    {
+        _logger.LogInformation("Initiating Google login");
+        var redirectUrl = Url.Action("GoogleResponse", "CustomerAuth", null, Request.Scheme);
+        var properties = new AuthenticationProperties { RedirectUri = redirectUrl };
+        return Challenge(properties, GoogleDefaults.AuthenticationScheme);
+    }
 
+    [HttpGet("google-response")]
+    public async Task<IActionResult> GoogleResponse()
+    {
+        _logger.LogInformation("Processing Google response");
+        var authenticateResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (!authenticateResult.Succeeded)
+        {
+            _logger.LogWarning("Google authentication failed");
+            return Unauthorized(new { message = "Xác thực Google thất bại." });
+        }
+
+        var email = authenticateResult.Principal.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrEmpty(email))
+        {
+            _logger.LogWarning("No email found in Google response");
+            return BadRequest(new { message = "Không tìm thấy email từ Google." });
+        }
+
+        var customer = await _context.Customers.FirstOrDefaultAsync(u => u.Email == email);
+        if (customer == null)
+        {
+            customer = new Customer
+            {
+                Email = email,
+                Password = BCrypt.Net.BCrypt.EnhancedHashPassword(Guid.NewGuid().ToString()),
+                CreatedAt = DateTime.UtcNow,
+                IsEmailVerified = true
+            };
+            _context.Customers.Add(customer);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("New customer registered via Google: {Email}", email);
+        }
+
+        var token = GenerateJwtToken(customer);
+        _logger.LogInformation("Google login successful for email: {Email}", email);
+        return Ok(new
+        {
+            message = "Đăng nhập bằng Google thành công.",
+            token,
+            customerId = customer.CustomerId
+        });
+    }
     private string GenerateJwtToken(Customer customer)
     {
         var key = Encoding.UTF8.GetBytes(_config["Jwt:Key"]);
