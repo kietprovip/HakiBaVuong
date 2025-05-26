@@ -12,6 +12,8 @@ using AutoMapper;
 using System.Net.Mail;
 using System.Net;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 [Route("api/auth")]
 [ApiController]
@@ -346,5 +348,109 @@ public class AuthController : ControllerBase
 
         var token = tokenHandler.CreateToken(tokenDescriptor);
         return tokenHandler.WriteToken(token);
+    }
+
+    [HttpGet("login-google")]
+    public IActionResult LoginWithGoogle()
+    {
+        _logger.LogInformation("Khởi tạo đăng nhập Google");
+        var redirectUrl = Url.Action("GoogleResponse", "Auth", null, Request.Scheme);
+        var properties = new AuthenticationProperties { RedirectUri = redirectUrl };
+        return Challenge(properties, "Google");
+    }
+
+    [HttpGet("google-response")]
+    public async Task<IActionResult> GoogleResponse()
+    {
+        _logger.LogInformation("Xử lý phản hồi Google");
+        var authenticateResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (!authenticateResult.Succeeded)
+        {
+            _logger.LogWarning("Xác thực Google thất bại: {Error}", authenticateResult.Failure?.Message);
+            return Unauthorized(new { message = "Xác thực Google thất bại.", error = authenticateResult.Failure?.Message });
+        }
+
+        var email = authenticateResult.Principal.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrEmpty(email))
+        {
+            _logger.LogWarning("Không tìm thấy email trong phản hồi Google");
+            return BadRequest(new { message = "Không tìm thấy email từ Google." });
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null)
+        {
+            user = new User
+            {
+                Name = authenticateResult.Principal.FindFirst(ClaimTypes.Name)?.Value ?? "Nhân viên Google",
+                Email = email,
+                Password = BCrypt.Net.BCrypt.EnhancedHashPassword(Guid.NewGuid().ToString()),
+                Role = "Staff",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                IsEmailVerified = true,
+                BrandId = null
+            };
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Tạo user mới qua Google: {Email}", email);
+        }
+
+        var token = GenerateJwtToken(user);
+        _logger.LogInformation("Đăng nhập Google thành công cho email: {Email}", email);
+
+        return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&userId={user.UserId}");
+    }
+
+    [HttpGet("login-facebook")]
+    public IActionResult LoginWithFacebook()
+    {
+        _logger.LogInformation("Khởi tạo đăng nhập Facebook");
+        var redirectUrl = Url.Action("FacebookResponse", "Auth", null, Request.Scheme);
+        var properties = new AuthenticationProperties { RedirectUri = redirectUrl };
+        return Challenge(properties, "Facebook");
+    }
+
+    [HttpGet("facebook-response")]
+    public async Task<IActionResult> FacebookResponse()
+    {
+        _logger.LogInformation("Xử lý phản hồi Facebook");
+        var authenticateResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (!authenticateResult.Succeeded)
+        {
+            _logger.LogWarning("Xác thực Facebook thất bại: {Error}", authenticateResult.Failure?.Message);
+            return Unauthorized(new { message = "Xác thực Facebook thất bại.", error = authenticateResult.Failure?.Message });
+        }
+
+        var email = authenticateResult.Principal.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrEmpty(email))
+        {
+            _logger.LogWarning("Không tìm thấy email trong phản hồi Facebook");
+            return BadRequest(new { message = "Không tìm thấy email từ Facebook." });
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null)
+        {
+            user = new User
+            {
+                Name = authenticateResult.Principal.FindFirst(ClaimTypes.Name)?.Value ?? "Nhân viên Facebook",
+                Email = email,
+                Password = BCrypt.Net.BCrypt.EnhancedHashPassword(Guid.NewGuid().ToString()),
+                Role = "Staff",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                IsEmailVerified = true,
+                BrandId = null
+            };
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Tạo user mới qua Facebook: {Email}", email);
+        }
+
+        var token = GenerateJwtToken(user);
+        _logger.LogInformation("Đăng nhập Facebook thành công cho email: {Email}", email);
+
+        return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&userId={user.UserId}");
     }
 }
