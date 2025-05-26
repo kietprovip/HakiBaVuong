@@ -113,7 +113,7 @@ namespace HakiBaVuong.Controllers
                     FullName = model.FullName,
                     Phone = model.Phone,
                     Address = model.Address,
-                    Status = model.PaymentMethod == "BankCard" ? "Đã thanh toán" : "Chưa thanh toán",
+                    Status = model.PaymentMethod = "Chưa thanh toán",
                     DeliveryStatus = "Đợi giao hàng",
                     TotalAmount = totalAmount,
                     Discount = model.Discount,

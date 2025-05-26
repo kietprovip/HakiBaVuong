@@ -1,254 +1,182 @@
-﻿using HakiBaVuong.Data;
-using HakiBaVuong.DTOs;
-using HakiBaVuong.Models;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using HakiBaVuong.Data;
 using Microsoft.EntityFrameworkCore;
-using System;
 using System.Net.Http;
-using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
+using System.Security.Cryptography;
+using Microsoft.Extensions.Configuration;
 
 namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class PayOSController : ControllerBase
     {
         private readonly DataContext _context;
         private readonly ILogger<PayOSController> _logger;
-        private readonly HttpClient _httpClient;
-        private static readonly string PayOSBaseUrl = "https://api.payos.vn/v2/payment-requests"; // Endpoint chính thức từ tài liệu
-        private readonly string WebhookUrl = "https://c37f-14-167-171-205.ngrok-free.app"; // Cập nhật ngrok ID khi chạy
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConfiguration _configuration;
 
-        public PayOSController(DataContext context, ILogger<PayOSController> logger, IHttpClientFactory httpClientFactory)
+        public PayOSController(DataContext context, ILogger<PayOSController> logger, IHttpClientFactory httpClientFactory, IConfiguration configuration)
         {
             _context = context;
             _logger = logger;
-            _httpClient = httpClientFactory.CreateClient();
-            _httpClient.BaseAddress = new Uri(PayOSBaseUrl);
+            _httpClientFactory = httpClientFactory;
+            _configuration = configuration;
         }
 
         [HttpPost("create")]
-        [Authorize(Roles = "Customer")]
-        public async Task<ActionResult<PaymentResponseDTO>> CreatePayment([FromBody] PaymentRequestDTO request)
+        public async Task<IActionResult> CreatePaymentLink([FromBody] CreatePaymentDTO model)
         {
-            _logger.LogInformation("CreatePayment called for order {OrderId}", request.OrderId);
+            _logger.LogInformation("Gọi CreatePaymentLink với OrderId: {OrderId}", model.OrderId);
 
             var customerId = GetCustomerId();
-            if (!customerId.HasValue)
+            if (customerId == null)
             {
-                _logger.LogWarning("Invalid customerId from token");
+                _logger.LogWarning("CustomerId không hợp lệ từ token");
                 return Unauthorized(new { message = "Token không hợp lệ." });
             }
+            _logger.LogInformation("CustomerId từ token: {CustomerId}", customerId);
 
             var order = await _context.Orders
                 .Include(o => o.Payment)
-                .FirstOrDefaultAsync(o => o.OrderId == request.OrderId && o.CustomerId == customerId.Value);
+                .FirstOrDefaultAsync(o => o.OrderId == model.OrderId && o.CustomerId == customerId);
+
             if (order == null)
             {
-                _logger.LogWarning("Order {OrderId} not found or not owned by customer {CustomerId}", request.OrderId, customerId);
+                _logger.LogWarning("Không tìm thấy đơn hàng: OrderId {OrderId}, CustomerId {CustomerId}", model.OrderId, customerId);
                 return NotFound(new { message = "Đơn hàng không tồn tại." });
             }
 
-            if (order.Status != "Chờ thanh toán")
-            {
-                _logger.LogWarning("Order {OrderId} has invalid status: {Status}", request.OrderId, order.Status);
-                return BadRequest(new { message = "Đơn hàng không ở trạng thái chờ thanh toán." });
-            }
+            _logger.LogInformation("Đã tìm thấy đơn hàng: OrderId {OrderId}, Status: {Status}, CustomerId: {CustomerId}",
+                order.OrderId, order.Status, order.CustomerId);
 
-            if (order.Payment != null)
+            if (order.Status != "Chưa thanh toán")
             {
-                _logger.LogWarning("Order {OrderId} already has a payment", request.OrderId);
-                return BadRequest(new { message = "Đơn hàng đã có thông tin thanh toán." });
+                _logger.LogWarning("Đơn hàng {OrderId} không thể thanh toán, trạng thái hiện tại: {Status}", model.OrderId, order.Status);
+                return BadRequest(new { message = $"Đơn hàng không ở trạng thái Chưa thanh toán. Trạng thái hiện tại: {order.Status}" });
             }
 
             try
             {
-                var orderCode = (int)(DateTime.UtcNow.Ticks % 100000000); // Unique PayOS order code
-                var payOSRequest = new
+                // Lấy thông tin PayOS từ appsettings.json
+                var clientId = _configuration["PayOS:ClientId"];
+                var apiKey = _configuration["PayOS:ApiKey"];
+                var checksumKey = _configuration["PayOS:ChecksumKey"];
+                var payOsApiUrl = _configuration["PayOS:endpoint"];
+
+                // Tạo yêu cầu thanh toán PayOS
+                var payOsRequest = new
                 {
-                    orderCode,
-                    amount = (int)(order.TotalAmount * 100), // PayOS yêu cầu amount là số tiền nhỏ nhất (VND, nhân 100)
-                    description = $"Thanh toán đơn hàng #{order.OrderId}",
-                    returnUrl = "http://localhost:3000/success",
-                    cancelUrl = "http://localhost:3000/cancel",
+                    orderCode = order.OrderId,
+                    amount = (int)order.TotalAmount,
+                    description = $"Thanh toán đơn hàng {order.OrderId}",
+                    returnUrl = "https://b1d5-14-167-171-205.ngrok-free.app/success", // URL ngrok cho thanh toán thành công
+                    cancelUrl = "https://b1d5-14-167-171-205.ngrok-free.app/cancel",  // URL ngrok cho hủy thanh toán
                     buyerName = order.FullName,
                     buyerPhone = order.Phone,
-                    buyerEmail = order.Customer.Email, // Thêm email nếu có
-                    items = await _context.OrderItems
-                        .Where(oi => oi.OrderId == order.OrderId)
-                        .Select(oi => new { name = oi.ProductName, quantity = oi.Quantity, price = (int)(oi.Price * 100) })
-                        .ToListAsync(),
-                    webhookUrl = WebhookUrl
+                    items = order.OrderItems.Select(i => new
+                    {
+                        name = i.ProductName,
+                        quantity = i.Quantity,
+                        price = (int)i.Price
+                    }).ToList()
                 };
 
-                var signature = GeneratePayOSSignature(payOSRequest, PayOS.checksumKey);
+                // Tạo checksum theo tài liệu PayOS
+                var rawData = $"amount={payOsRequest.amount}&cancelUrl={payOsRequest.cancelUrl}&description={payOsRequest.description}&orderCode={payOsRequest.orderCode}&returnUrl={payOsRequest.returnUrl}";
+                var checksum = GenerateChecksum(rawData, checksumKey);
+
                 var requestBody = new
                 {
-                    data = payOSRequest,
-                    signature
+                    payOsRequest.orderCode,
+                    payOsRequest.amount,
+                    payOsRequest.description,
+                    payOsRequest.returnUrl,
+                    payOsRequest.cancelUrl,
+                    payOsRequest.buyerName,
+                    payOsRequest.buyerPhone,
+                    payOsRequest.items,
+                    signature = checksum
                 };
 
-                var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-                var authToken = GenerateAuthToken(PayOS.clientId, PayOS.apiKey, PayOS.checksumKey);
-                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authToken);
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Add("x-client-id", clientId);
+                client.DefaultRequestHeaders.Add("x-api-key", apiKey);
 
-                var response = await _httpClient.PostAsync("", content); // Sử dụng BaseAddress đã thiết lập
+                var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(payOsApiUrl, content);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("PayOS API error: {StatusCode}, {Content}", response.StatusCode, errorContent);
-                    return StatusCode(500, new { message = "Lỗi khi tạo liên kết thanh toán." });
+                    _logger.LogError("Lỗi khi gọi API PayOS cho đơn hàng {OrderId}. Status: {StatusCode}, Error: {ErrorContent}",
+                        model.OrderId, response.StatusCode, errorContent);
+                    return StatusCode(500, new { message = "Lỗi khi tạo liên kết thanh toán PayOS. Vui lòng thử lại." });
                 }
 
-                var responseJson = await response.Content.ReadAsStringAsync();
-                var payOSResponse = JsonSerializer.Deserialize<PayOSResponse>(responseJson);
+                var responseData = await response.Content.ReadAsStringAsync();
+                var payOsResponse = JsonSerializer.Deserialize<PayOsResponse>(responseData);
 
-                if (payOSResponse.Code != "00")
+                if (payOsResponse == null || string.IsNullOrEmpty(payOsResponse.data?.paymentLink))
                 {
-                    _logger.LogError("PayOS API failed: {Code}, {Desc}", payOSResponse.Code, payOSResponse.Desc);
-                    return StatusCode(500, new { message = "Lỗi từ PayOS: " + payOSResponse.Desc });
+                    _logger.LogError("Không nhận được paymentLink từ PayOS cho đơn hàng {OrderId}", model.OrderId);
+                    return StatusCode(500, new { message = "Không thể tạo liên kết thanh toán. Phản hồi từ PayOS không hợp lệ." });
                 }
 
-                var payment = new Payment
-                {
-                    OrderId = order.OrderId,
-                    Amount = order.TotalAmount,
-                    Method = "PayOS_QR",
-                    Status = "PENDING",
-                    TransactionId = payOSResponse.Data.PaymentLinkId,
-                    PaymentLink = payOSResponse.Data.QrCode ?? payOSResponse.Data.CheckoutUrl // Ưu tiên QR nếu có
-                };
-
-                _context.Payments.Add(payment);
-                order.Status = "Đang xử lý";
+                // Cập nhật trạng thái thanh toán
+                order.Payment.Status = "Pending";
+                order.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("Created payment for order {OrderId}, paymentLinkId: {PaymentLinkId}", order.OrderId, payment.TransactionId);
-                return Ok(new PaymentResponseDTO
+                _logger.LogInformation("Đã tạo liên kết thanh toán cho đơn hàng {OrderId}. PaymentLink: {PaymentLink}, QRCodeUrl: {QRCodeUrl}",
+                    model.OrderId, payOsResponse.data.paymentLink, payOsResponse.data.qrCode);
+
+                return Ok(new
                 {
-                    PaymentId = payment.PaymentId,
-                    OrderId = order.OrderId,
-                    Amount = payment.Amount,
-                    Method = payment.Method,
-                    Status = payment.Status,
-                    QrCodeUrl = payment.PaymentLink,
-                    PaymentLink = payOSResponse.Data.CheckoutUrl
+                    paymentLink = payOsResponse.data.paymentLink,
+                    qrCodeUrl = payOsResponse.data.qrCode
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating payment for order {OrderId}", request.OrderId);
-                return StatusCode(500, new { message = "Lỗi khi tạo thanh toán. Vui lòng thử lại sau." });
+                _logger.LogError(ex, "Lỗi khi tạo liên kết thanh toán cho đơn hàng {OrderId}. Chi tiết: {Message}", model.OrderId, ex.Message);
+                return StatusCode(500, new { message = "Lỗi khi tạo liên kết thanh toán. Vui lòng thử lại." });
             }
         }
 
-        [HttpPost("webhook")]
-        [AllowAnonymous]
-        public async Task<IActionResult> Webhook([FromBody] PayOSWebhookDTO webhook)
+        private string GenerateChecksum(string data, string checksumKey)
         {
-            _logger.LogInformation("Webhook received with orderCode: {OrderCode}", webhook.Data.OrderCode);
-
-            try
-            {
-                var isValidSignature = ValidateWebhookSignature(webhook, PayOS.checksumKey);
-                if (!isValidSignature)
-                {
-                    _logger.LogWarning("Invalid webhook signature for orderCode: {OrderCode}", webhook.Data.OrderCode);
-                    return BadRequest(new { message = "Chữ ký không hợp lệ." });
-                }
-
-                var payment = await _context.Payments
-                    .Include(p => p.Order)
-                    .FirstOrDefaultAsync(p => p.TransactionId == webhook.Data.PaymentLinkId);
-                if (payment == null)
-                {
-                    _logger.LogWarning("Payment not found for paymentLinkId: {PaymentLinkId}", webhook.Data.PaymentLinkId);
-                    return NotFound(new { message = "Thanh toán không tồn tại." });
-                }
-
-                payment.Status = webhook.Data.Status switch
-                {
-                    "PAID" => "COMPLETED",
-                    "CANCELLED" => "FAILED",
-                    _ => payment.Status
-                };
-                payment.UpdatedAt = DateTime.Now;
-
-                payment.Order.Status = webhook.Data.Status switch
-                {
-                    "PAID" => "Đã thanh toán",
-                    "CANCELLED" => "Đã hủy",
-                    _ => payment.Order.Status
-                };
-
-                await _context.SaveChangesAsync();
-                _logger.LogInformation("Updated payment {PaymentId} to status {Status} for order {OrderId}", payment.PaymentId, payment.Status, payment.OrderId);
-                return Ok(new { message = "Webhook processed successfully." });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing webhook for orderCode: {OrderCode}", webhook.Data.OrderCode);
-                return StatusCode(500, new { message = "Lỗi khi xử lý webhook." });
-            }
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(checksumKey));
+            var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+            return Convert.ToHexString(hashBytes).ToLower();
         }
 
         private int? GetCustomerId()
         {
-            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var customerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            _logger.LogInformation("CustomerIdClaim từ token: {CustomerIdClaim}", customerIdClaim ?? "null");
             return int.TryParse(customerIdClaim, out int customerId) ? customerId : null;
         }
-
-        private string GeneratePayOSSignature(object data, string checksumKey)
-        {
-            var sortedJson = JsonSerializer.Serialize(data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            var sortedDict = JsonSerializer.Deserialize<Dictionary<string, object>>(sortedJson);
-            var sortedString = string.Join("", sortedDict.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}{kv.Value}"));
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(checksumKey));
-            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(sortedString));
-            return BitConverter.ToString(hash).Replace("-", "").ToLower();
-        }
-
-        private string GenerateAuthToken(string clientId, string apiKey, string checksumKey)
-        {
-            var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-            var message = $"{clientId}{apiKey}{timestamp}";
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(checksumKey));
-            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
-            var token = Convert.ToBase64String(hash);
-            return token;
-        }
-
-        private bool ValidateWebhookSignature(PayOSWebhookDTO webhook, string checksumKey)
-        {
-            var receivedSignature = webhook.Signature;
-            var data = webhook.Data;
-            var sortedJson = JsonSerializer.Serialize(data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            var sortedDict = JsonSerializer.Deserialize<Dictionary<string, object>>(sortedJson);
-            var sortedString = string.Join("", sortedDict.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}{kv.Value}"));
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(checksumKey));
-            var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(sortedString));
-            var computedSignature = BitConverter.ToString(computedHash).Replace("-", "").ToLower();
-            return receivedSignature == computedSignature;
-        }
     }
 
-    internal class PayOSResponse
+    public class CreatePaymentDTO
     {
-        public string Code { get; set; }
-        public string Desc { get; set; }
-        public PayOSData Data { get; set; }
+        public int OrderId { get; set; }
     }
 
-    internal class PayOSData
+    public class PayOsResponse
     {
-        public string PaymentLinkId { get; set; }
-        public string CheckoutUrl { get; set; }
-        public string QrCode { get; set; }
+        public string code { get; set; }
+        public PayOsData data { get; set; }
+    }
+
+    public class PayOsData
+    {
+        public string paymentLink { get; set; }
+        public string qrCode { get; set; }
     }
 }
