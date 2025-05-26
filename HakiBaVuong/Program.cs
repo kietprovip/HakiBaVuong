@@ -5,6 +5,7 @@ using HakiBaVuong.Data;
 using System.Text;
 using Microsoft.Extensions.FileProviders;
 using HakiBaVuong.Models;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,43 +29,40 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddDistributedMemoryCache();
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddCookie()
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
-        };
-        options.Events = new JwtBearerEvents
-        {
-            OnAuthenticationFailed = context =>
-            {
-                Console.WriteLine("Authentication failed: " + context.Exception.Message);
-                return Task.CompletedTask;
-            }
-        };
-    })
-    .AddCookie()
-    .AddGoogle(googleOptions =>
-    {
-        var googleAuthNSection = builder.Configuration.GetSection("Authentication:Google");
-        googleOptions.ClientId = googleAuthNSection["ClientId"];
-        googleOptions.ClientSecret = googleAuthNSection["ClientSecret"];
-        googleOptions.CallbackPath = "/signin-google"; // Phải khớp với Authorized redirect URI trong Google Cloud Console
-    })
-    .AddFacebook(facebookOptions =>
-    {
-        var fbAuthNSection = builder.Configuration.GetSection("Authentication:Facebook");
-        facebookOptions.AppId = fbAuthNSection["AppId"];
-        facebookOptions.AppSecret = fbAuthNSection["AppSecret"];
-        facebookOptions.CallbackPath = "/signin-facebook"; // Phải khớp với redirect URI trong Facebook Developer Console
-    }); 
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+    };
+})
+.AddGoogle(googleOptions =>
+{
+    var googleAuthNSection = builder.Configuration.GetSection("Authentication:Google");
+    googleOptions.ClientId = googleAuthNSection["ClientId"];
+    googleOptions.ClientSecret = googleAuthNSection["ClientSecret"];
+    googleOptions.CallbackPath = "/signin-google";
+})
+.AddFacebook(facebookOptions =>
+{
+    var fbAuthNSection = builder.Configuration.GetSection("Authentication:Facebook");
+    facebookOptions.AppId = fbAuthNSection["AppId"];
+    facebookOptions.AppSecret = fbAuthNSection["AppSecret"];
+    facebookOptions.CallbackPath = "/signin-facebook";
+});
+
 
 
 builder.Services.AddAuthorization();

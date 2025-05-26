@@ -272,6 +272,7 @@ public class CustomerAuthController : ControllerBase
         {
             customer = new Customer
             {
+                Name = authenticateResult.Principal.FindFirst(ClaimTypes.Name)?.Value ?? "Khách hàng Google",
                 Email = email,
                 Password = BCrypt.Net.BCrypt.EnhancedHashPassword(Guid.NewGuid().ToString()),
                 CreatedAt = DateTime.UtcNow,
