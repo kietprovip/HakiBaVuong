@@ -86,6 +86,7 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseDeveloperExceptionPage();
 }
 app.UseFileServer(new FileServerOptions
 {

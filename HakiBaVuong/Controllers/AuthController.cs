@@ -350,7 +350,7 @@ public class AuthController : ControllerBase
         return tokenHandler.WriteToken(token);
     }
 
-    [HttpGet("login-google")]
+    [HttpGet("login-google-brand")]
     public IActionResult LoginWithGoogle()
     {
         _logger.LogInformation("Khởi tạo đăng nhập Google");
@@ -359,7 +359,7 @@ public class AuthController : ControllerBase
         return Challenge(properties, "Google");
     }
 
-    [HttpGet("google-response")]
+    [HttpGet("google-response-brand")]
     public async Task<IActionResult> GoogleResponse()
     {
         _logger.LogInformation("Xử lý phản hồi Google");
@@ -402,7 +402,7 @@ public class AuthController : ControllerBase
         return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&userId={user.UserId}");
     }
 
-    [HttpGet("login-facebook")]
+    [HttpGet("login-facebook-brand")]
     public IActionResult LoginWithFacebook()
     {
         _logger.LogInformation("Khởi tạo đăng nhập Facebook");
@@ -411,7 +411,7 @@ public class AuthController : ControllerBase
         return Challenge(properties, "Facebook");
     }
 
-    [HttpGet("facebook-response")]
+    [HttpGet("facebook-response-brand")]
     public async Task<IActionResult> FacebookResponse()
     {
         _logger.LogInformation("Xử lý phản hồi Facebook");
