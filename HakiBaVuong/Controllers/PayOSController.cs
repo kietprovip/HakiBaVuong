@@ -21,16 +21,15 @@ namespace HakiBaVuong.Controllers
         private readonly DataContext _context;
         private readonly ILogger<PayOSController> _logger;
         private readonly HttpClient _httpClient;
-        private static readonly string PayOSBaseUrl = "https://api-payos.vnpay.vn/v2/payment-requests";
-        private string WebhookUrl => "https://your-ngrok-id.ngrok.io/api/PayOS/webhook"; // Update after running ngrok
+        private static readonly string PayOSBaseUrl = "https://api.payos.vn/v2/payment-requests"; // Endpoint chính thức từ tài liệu
+        private readonly string WebhookUrl = "https://c37f-14-167-171-205.ngrok-free.app"; // Cập nhật ngrok ID khi chạy
 
-        public PayOSController(DataContext context, ILogger<PayOSController> logger, HttpClient httpClient)
+        public PayOSController(DataContext context, ILogger<PayOSController> logger, IHttpClientFactory httpClientFactory)
         {
             _context = context;
             _logger = logger;
-            _httpClient = httpClient;
-            _httpClient.DefaultRequestHeaders.Add("x-client-id", PayOS.clientId);
-            _httpClient.DefaultRequestHeaders.Add("x-api-key", PayOS.apiKey);
+            _httpClient = httpClientFactory.CreateClient();
+            _httpClient.BaseAddress = new Uri(PayOSBaseUrl);
         }
 
         [HttpPost("create")]
@@ -73,24 +72,32 @@ namespace HakiBaVuong.Controllers
                 var payOSRequest = new
                 {
                     orderCode,
-                    amount = (int)order.TotalAmount, // PayOS expects integer VND
+                    amount = (int)(order.TotalAmount * 100), // PayOS yêu cầu amount là số tiền nhỏ nhất (VND, nhân 100)
                     description = $"Thanh toán đơn hàng #{order.OrderId}",
-                    returnUrl = "http://localhost:3000/success", // Frontend success page
-                    cancelUrl = "http://localhost:3000/cancel", // Frontend cancel page
+                    returnUrl = "http://localhost:3000/success",
+                    cancelUrl = "http://localhost:3000/cancel",
                     buyerName = order.FullName,
                     buyerPhone = order.Phone,
+                    buyerEmail = order.Customer.Email, // Thêm email nếu có
                     items = await _context.OrderItems
                         .Where(oi => oi.OrderId == order.OrderId)
-                        .Select(oi => new { name = oi.ProductName, quantity = oi.Quantity, price = (int)oi.Price })
+                        .Select(oi => new { name = oi.ProductName, quantity = oi.Quantity, price = (int)(oi.Price * 100) })
                         .ToListAsync(),
-                    webhookUrl = WebhookUrl // PayOS webhook URL
+                    webhookUrl = WebhookUrl
                 };
 
-                var signature = GenerateSignature(payOSRequest, PayOS.checksumKey);
-                var requestBody = new { data = payOSRequest, signature };
+                var signature = GeneratePayOSSignature(payOSRequest, PayOS.checksumKey);
+                var requestBody = new
+                {
+                    data = payOSRequest,
+                    signature
+                };
 
                 var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-                var response = await _httpClient.PostAsync(PayOSBaseUrl, content);
+                var authToken = GenerateAuthToken(PayOS.clientId, PayOS.apiKey, PayOS.checksumKey);
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authToken);
+
+                var response = await _httpClient.PostAsync("", content); // Sử dụng BaseAddress đã thiết lập
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -115,7 +122,7 @@ namespace HakiBaVuong.Controllers
                     Method = "PayOS_QR",
                     Status = "PENDING",
                     TransactionId = payOSResponse.Data.PaymentLinkId,
-                    PaymentLink = payOSResponse.Data.QrCode
+                    PaymentLink = payOSResponse.Data.QrCode ?? payOSResponse.Data.CheckoutUrl // Ưu tiên QR nếu có
                 };
 
                 _context.Payments.Add(payment);
@@ -197,7 +204,7 @@ namespace HakiBaVuong.Controllers
             return int.TryParse(customerIdClaim, out int customerId) ? customerId : null;
         }
 
-        private string GenerateSignature(object data, string checksumKey)
+        private string GeneratePayOSSignature(object data, string checksumKey)
         {
             var sortedJson = JsonSerializer.Serialize(data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             var sortedDict = JsonSerializer.Deserialize<Dictionary<string, object>>(sortedJson);
@@ -205,6 +212,16 @@ namespace HakiBaVuong.Controllers
             using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(checksumKey));
             var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(sortedString));
             return BitConverter.ToString(hash).Replace("-", "").ToLower();
+        }
+
+        private string GenerateAuthToken(string clientId, string apiKey, string checksumKey)
+        {
+            var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+            var message = $"{clientId}{apiKey}{timestamp}";
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(checksumKey));
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
+            var token = Convert.ToBase64String(hash);
+            return token;
         }
 
         private bool ValidateWebhookSignature(PayOSWebhookDTO webhook, string checksumKey)
