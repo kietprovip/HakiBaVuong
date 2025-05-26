@@ -240,6 +240,7 @@ public class CustomerAuthController : ControllerBase
             await smtp.SendMailAsync(message);
         }
     }
+
     [HttpGet("login-google")]
     public IActionResult LoginWithGoogle()
     {
@@ -285,13 +286,10 @@ public class CustomerAuthController : ControllerBase
 
         var token = GenerateJwtToken(customer);
         _logger.LogInformation("Google login successful for email: {Email}", email);
-        return Ok(new
-        {
-            message = "Đăng nhập bằng Google thành công.",
-            token,
-            customerId = customer.CustomerId
-        });
+
+        return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&customerId={customer.CustomerId}");
     }
+
     private string GenerateJwtToken(Customer customer)
     {
         var key = Encoding.UTF8.GetBytes(_config["Jwt:Key"]);
