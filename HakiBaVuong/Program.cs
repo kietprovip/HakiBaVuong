@@ -55,6 +55,13 @@ builder.Services.AddAuthentication(options =>
     options.ClientId = googleSection["ClientId"];
     options.ClientSecret = googleSection["ClientSecret"];
     options.CallbackPath = "/signin-google";
+})
+.AddFacebook(facebookOptions =>
+{
+    var fbAuthNSection = builder.Configuration.GetSection("Authentication:Facebook");
+    facebookOptions.AppId = fbAuthNSection["AppId"];
+    facebookOptions.AppSecret = fbAuthNSection["AppSecret"];
+    facebookOptions.CallbackPath = "/signin-facebook"; 
 });
 
 

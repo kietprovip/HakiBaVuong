@@ -15,6 +15,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Facebook;
 
 [Route("api/auth")]
 [ApiController]
@@ -289,7 +290,54 @@ public class CustomerAuthController : ControllerBase
 
         return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&customerId={customer.CustomerId}");
     }
+    [HttpGet("login-facebook")]
+    public IActionResult LoginWithFacebook()
+    {
+        _logger.LogInformation("Initiating Facebook login");
+        var redirectUrl = Url.Action("FacebookResponse", "CustomerAuth", null, Request.Scheme);
+        var properties = new AuthenticationProperties { RedirectUri = redirectUrl };
+        return Challenge(properties, FacebookDefaults.AuthenticationScheme);
+    }
 
+    [HttpGet("facebook-response")]
+    public async Task<IActionResult> FacebookResponse()
+    {
+        _logger.LogInformation("Processing Facebook response");
+        var authenticateResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (!authenticateResult.Succeeded)
+        {
+            _logger.LogWarning("Facebook authentication failed: {Error}", authenticateResult.Failure?.Message);
+            return Unauthorized(new { message = "Xác thực Facebook thất bại.", error = authenticateResult.Failure?.Message });
+        }
+
+        var email = authenticateResult.Principal.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrEmpty(email))
+        {
+            _logger.LogWarning("No email found in Facebook response");
+            return BadRequest(new { message = "Không tìm thấy email từ Facebook." });
+        }
+
+        var customer = await _context.Customers.FirstOrDefaultAsync(u => u.Email == email);
+        if (customer == null)
+        {
+            customer = new Customer
+            {
+                Name = authenticateResult.Principal.FindFirst(ClaimTypes.Name)?.Value ?? "Khách hàng Facebook",
+                Email = email,
+                Password = BCrypt.Net.BCrypt.EnhancedHashPassword(Guid.NewGuid().ToString()),
+                CreatedAt = DateTime.UtcNow,
+                IsEmailVerified = true
+            };
+            _context.Customers.Add(customer);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("New customer registered via Facebook: {Email}", email);
+        }
+
+        var token = GenerateJwtToken(customer);
+        _logger.LogInformation("Facebook login successful for email: {Email}", email);
+
+        return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&customerId={customer.CustomerId}");
+    }
     private string GenerateJwtToken(Customer customer)
     {
         var key = Encoding.UTF8.GetBytes(_config["Jwt:Key"]);
