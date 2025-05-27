@@ -263,6 +263,34 @@ namespace HakiBaVuong.Controllers
             return Ok(products);
         }
 
+        // New endpoint to fetch categories for staff, admin, and inventory managers
+        [HttpGet("categories")]
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
+        public async Task<ActionResult<IEnumerable<CategoryDTO>>> GetCategories([FromQuery] string search = "")
+        {
+            _logger.LogInformation("GetCategories called with search: {Search}", search);
+
+            var query = _context.Categories.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var searchLower = search.ToLower();
+                query = query.Where(c => c.Name.ToLower().Contains(searchLower) || (c.Description != null && c.Description.ToLower().Contains(searchLower)));
+            }
+
+            var categories = await query
+                .Select(c => new CategoryDTO
+                {
+                    CategoryId = c.CategoryId,
+                    Name = c.Name,
+                    Description = c.Description
+                })
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} categories", categories.Count);
+            return Ok(categories);
+        }
+
         [HttpPost]
         [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<ActionResult<Product>> Create(ProductDTO productDto)
