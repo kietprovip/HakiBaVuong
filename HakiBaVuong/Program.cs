@@ -77,10 +77,7 @@ builder.Services.AddSession(options =>
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.None : CookieSecurePolicy.Always;
 });
 var app = builder.Build();
-var payOSConfig = builder.Configuration.GetSection("PayOS");
-PayOS.clientId = payOSConfig["ClientId"];
-PayOS.apiKey = payOSConfig["ApiKey"];
-PayOS.checksumKey = payOSConfig["ChecksumKey"];
+
 
 if (app.Environment.IsDevelopment())
 {

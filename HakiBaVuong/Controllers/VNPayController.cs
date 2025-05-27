@@ -10,6 +10,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
+using System.Globalization;
+using System.Numerics;
+
 
 namespace HakiBaVuong.Controllers
 {
@@ -62,10 +66,13 @@ namespace HakiBaVuong.Controllers
                 var returnUrl = _configuration["Authentication:VNPay:ReturnUrl"];
 
                 var vnpOrderId = $"ORDER_{order.OrderId}_{DateTime.Now:yyyyMMddHHmmss}";
-                var amount = (long)(model.Amount * 100); // nhân 100 theo tài liệu
-                var orderDesc = model.Description;
+                var amount = (long)(model.Amount * 100);
+                var orderDesc = Uri.EscapeDataString(RemoveDiacritics(model.Description));
                 var createDate = DateTime.Now.ToString("yyyyMMddHHmmss");
+                var expireDate = DateTime.Now.AddMinutes(15).ToString("yyyyMMddHHmmss");
                 var ipAddr = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+                _logger.LogInformation("vnp_Amount: {Amount}", amount);
 
                 var vnpParams = new Dictionary<string, string>
                 {
@@ -74,6 +81,7 @@ namespace HakiBaVuong.Controllers
                     { "vnp_TmnCode", tmnCode },
                     { "vnp_Amount", amount.ToString() },
                     { "vnp_CreateDate", createDate },
+                    { "vnp_ExpireDate", expireDate },
                     { "vnp_CurrCode", "VND" },
                     { "vnp_IpAddr", ipAddr },
                     { "vnp_Locale", "vn" },
@@ -85,13 +93,16 @@ namespace HakiBaVuong.Controllers
 
                 var sortedParams = vnpParams.OrderBy(kvp => kvp.Key).ToList();
                 var signData = string.Join("&", sortedParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
+                _logger.LogInformation("Sign data: {SignData}", signData);
                 var vnpSecureHash = ComputeHmacSha512(signData, hashSecret);
+                _logger.LogInformation("Computed vnp_SecureHash: {SecureHash}", vnpSecureHash);
                 vnpParams.Add("vnp_SecureHash", vnpSecureHash);
 
                 var paymentUrl = vnpUrl + "?" + string.Join("&", vnpParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
                 order.Payment.Status = "Pending";
                 await _context.SaveChangesAsync();
 
+                _logger.LogInformation("Payment URL: {PaymentUrl}", paymentUrl);
                 return Ok(new { paymentUrl });
             }
             catch (Exception ex)
@@ -102,6 +113,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("callback")]
+        [AllowAnonymous]
         public async Task<IActionResult> HandleVNPayCallback()
         {
             _logger.LogInformation("VNPay callback received with query: {Query}", Request.QueryString.Value);
@@ -119,7 +131,7 @@ namespace HakiBaVuong.Controllers
 
                 if (computedHash != receivedHash)
                 {
-                    _logger.LogWarning("Sai chữ ký callback từ VNPay.");
+                    _logger.LogWarning("Sai chữ ký callback từ VNPay. Computed: {ComputedHash}, Received: {ReceivedHash}", computedHash, receivedHash);
                     return BadRequest(new { message = "Chữ ký không hợp lệ." });
                 }
 
@@ -140,15 +152,17 @@ namespace HakiBaVuong.Controllers
                 {
                     order.Status = "Đã thanh toán";
                     order.Payment.Status = "Completed";
+                    await _context.SaveChangesAsync();
+                    return Redirect("http://localhost:5173/order-confirmation");
                 }
                 else
                 {
                     order.Status = "Thanh toán thất bại";
                     order.Payment.Status = "Failed";
-                }
+                    await _context.SaveChangesAsync();
 
-                await _context.SaveChangesAsync();
-                return Redirect("https://localhost:7258/order-confirmation");
+                    return Redirect("http://localhost:5173/");
+                }
             }
             catch (Exception ex)
             {
@@ -164,6 +178,23 @@ namespace HakiBaVuong.Controllers
                 var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
                 return BitConverter.ToString(hash).Replace("-", "").ToLower();
             }
+        }
+
+        private string RemoveDiacritics(string text)
+        {
+            var normalizedString = text.Normalize(NormalizationForm.FormD);
+            var stringBuilder = new StringBuilder();
+
+            foreach (var c in normalizedString)
+            {
+                var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (unicodeCategory != UnicodeCategory.NonSpacingMark)
+                {
+                    stringBuilder.Append(c);
+                }
+            }
+
+            return stringBuilder.ToString().Normalize(NormalizationForm.FormC);
         }
 
         private int? GetCustomerId()
