@@ -91,5 +91,65 @@ namespace HakiBaVuong.Controllers
             _logger.LogInformation("Retrieved {Count} comments for product ID: {Id}", comments.Count, id);
             return Ok(comments);
         }
+
+        [HttpPost("{id}/comments")]
+        [Authorize]
+        public async Task<ActionResult<CommentDTO>> PostComment(int id, [FromBody] CreateCommentDTO model)
+        {
+            _logger.LogInformation("PostComment called for product ID: {Id}", id);
+
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(customerIdClaim, out int customerId))
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var product = await _context.Products.FindAsync(id);
+            if (product == null)
+            {
+                _logger.LogWarning("Product not found: {Id}", id);
+                return NotFound(new { message = "Sản phẩm không tồn tại." });
+            }
+
+            if (string.IsNullOrWhiteSpace(model.Content) || model.Rating < 1 || model.Rating > 5)
+            {
+                _logger.LogWarning("Invalid comment data: Content or Rating is invalid");
+                return BadRequest(new { message = "Nội dung bình luận không được để trống và đánh giá phải từ 1 đến 5." });
+            }
+
+            var comment = new Comment
+            {
+                ProductId = id,
+                CustomerId = customerId,
+                Content = model.Content,
+                Rating = model.Rating,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Comments.Add(comment);
+            await _context.SaveChangesAsync();
+
+            var averageRating = await _context.Comments
+                .Where(c => c.ProductId == id)
+                .AverageAsync(c => (double?)c.Rating);
+            product.Rating = averageRating.HasValue ? (float)Math.Round(averageRating.Value, 1) : 5.0f;
+            _context.Products.Update(product);
+            await _context.SaveChangesAsync();
+
+            var commentDto = new CommentDTO
+            {
+                CommentId = comment.CommentId,
+                ProductId = comment.ProductId,
+                CustomerId = comment.CustomerId,
+                Content = comment.Content,
+                Rating = comment.Rating,
+                CreatedAt = comment.CreatedAt,
+                CustomerName = (await _context.Customers.FindAsync(customerId)).Name
+            };
+
+            _logger.LogInformation("Comment created for product {ProductId} by customer {CustomerId}", id, customerId);
+            return CreatedAtAction(nameof(GetProductComments), new { id = comment.ProductId }, commentDto);
+        }
     }
 }
