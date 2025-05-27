@@ -431,6 +431,10 @@ namespace HakiBaVuong.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Image")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -475,31 +479,6 @@ namespace HakiBaVuong.Migrations
                     b.HasIndex("CategoryId");
 
                     b.ToTable("ProductCategories");
-                });
-
-            modelBuilder.Entity("HakiBaVuong.Models.ProductImage", b =>
-                {
-                    b.Property<int>("ImageId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ImageId"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ImageUrl")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ProductId")
-                        .HasColumnType("int");
-
-                    b.HasKey("ImageId");
-
-                    b.HasIndex("ProductId");
-
-                    b.ToTable("ProductImages");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.StaffPermission", b =>
@@ -763,17 +742,6 @@ namespace HakiBaVuong.Migrations
                     b.Navigation("Product");
                 });
 
-            modelBuilder.Entity("HakiBaVuong.Models.ProductImage", b =>
-                {
-                    b.HasOne("HakiBaVuong.Models.Product", "Product")
-                        .WithMany("ProductImages")
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Product");
-                });
-
             modelBuilder.Entity("HakiBaVuong.Models.StaffPermission", b =>
                 {
                     b.HasOne("HakiBaVuong.Models.User", "Staff")
@@ -852,8 +820,6 @@ namespace HakiBaVuong.Migrations
             modelBuilder.Entity("HakiBaVuong.Models.Product", b =>
                 {
                     b.Navigation("ProductCategories");
-
-                    b.Navigation("ProductImages");
                 });
 #pragma warning restore 612, 618
         }

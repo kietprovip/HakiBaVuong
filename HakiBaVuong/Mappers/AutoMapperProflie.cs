@@ -15,10 +15,7 @@ namespace sexthu.Mappers
                 .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses))
                 .ReverseMap();
             CreateMap<CustomerAddress, CustomerAddressDTO>().ReverseMap();
-            CreateMap<Product, ProductDTO>()
-                .ForMember(dest => dest.ProductImages, opt => opt.MapFrom(src => src.ProductImages.Select(pi => pi.ImageUrl).ToList()))
-                .ReverseMap()
-                .ForMember(dest => dest.ProductImages, opt => opt.Ignore());
+            CreateMap<Product, ProductDTO>().ReverseMap();
             CreateMap<Inventory, InventoryDTO>().ReverseMap();
 
             CreateMap<Order, OrderDTO>()

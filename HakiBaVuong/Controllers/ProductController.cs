@@ -7,7 +7,7 @@ using HakiBaVuong.Data;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-
+//BE mới
 namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
@@ -32,7 +32,6 @@ namespace HakiBaVuong.Controllers
 
             var query = _context.Products
                 .Include(p => p.Brand)
-                .Include(p => p.ProductImages)
                 .Include(p => p.ProductCategories)
                 .ThenInclude(pc => pc.Category)
                 .AsQueryable();
@@ -59,11 +58,27 @@ namespace HakiBaVuong.Controllers
                     Rating = p.Rating,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
-                    ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                    Image = p.Image,
                     CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                 })
                 .ToListAsync();
 
+            _logger.LogInformation("Retrieved {Count} products", products.Count);
+            return Ok(products);
+        }
+
+        [HttpGet("with-brand")]
+        public async Task<ActionResult<IEnumerable<Product>>> GetAllWithBrand([FromQuery] int? brandId, [FromQuery] List<int> categoryIds)
+        {
+            _logger.LogInformation("GetAll products called with brandId: {BrandId}", brandId);
+
+            var query = _context.Products.AsQueryable();
+            if (brandId.HasValue)
+            {
+                query = query.Where(p => p.BrandId == brandId.Value);
+            }
+
+            var products = await query.Include(p => p.Brand).ToListAsync();
             _logger.LogInformation("Retrieved {Count} products", products.Count);
             return Ok(products);
         }
@@ -191,7 +206,6 @@ namespace HakiBaVuong.Controllers
 
             var product = await _context.Products
                 .Include(p => p.Brand)
-                .Include(p => p.ProductImages)
                 .FirstOrDefaultAsync(p => p.ProductId == id);
             if (product == null)
             {
@@ -257,13 +271,11 @@ namespace HakiBaVuong.Controllers
             var products = await _context.Products
                 .Where(p => p.BrandId == brandId)
                 .Include(p => p.Brand)
-                .Include(p => p.ProductImages)
                 .ToListAsync();
             _logger.LogInformation("Retrieved {Count} products for brand ID: {BrandId}", products.Count, brandId);
             return Ok(products);
         }
 
-        // New endpoint to fetch categories for staff, admin, and inventory managers
         [HttpGet("categories")]
         [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<ActionResult<IEnumerable<CategoryDTO>>> GetCategories([FromQuery] string search = "")
@@ -293,7 +305,7 @@ namespace HakiBaVuong.Controllers
 
         [HttpPost]
         [Authorize(Roles = "Admin,Staff,InventoryManager")]
-        public async Task<ActionResult<Product>> Create(ProductDTO productDto)
+        public async Task<ActionResult<ProductDTO>> Create(ProductDTO productDto)
         {
             _logger.LogInformation("Create product called with name: {Name}, brandId: {BrandId}", productDto.Name, productDto.BrandId);
 
@@ -356,6 +368,7 @@ namespace HakiBaVuong.Controllers
                 Description = productDto.Description,
                 PriceSell = productDto.PriceSell,
                 PriceCost = productDto.PriceCost,
+                Image = productDto.Image,
                 Rating = 0,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -363,6 +376,18 @@ namespace HakiBaVuong.Controllers
 
             _context.Products.Add(product);
             await _context.SaveChangesAsync();
+
+            if (productDto.CategoryIds != null && productDto.CategoryIds.Any())
+            {
+                var productCategories = productDto.CategoryIds.Select(categoryId => new ProductCategory
+                {
+                    ProductId = product.ProductId,
+                    CategoryId = categoryId,
+                    AssignedAt = DateTime.UtcNow
+                }).ToList();
+                _context.ProductCategories.AddRange(productCategories);
+                await _context.SaveChangesAsync();
+            }
 
             var inventory = new Inventory
             {
@@ -373,8 +398,23 @@ namespace HakiBaVuong.Controllers
             _context.Inventories.Add(inventory);
             await _context.SaveChangesAsync();
 
+            var productDtoResponse = new ProductDTO
+            {
+                ProductId = product.ProductId,
+                BrandId = product.BrandId,
+                Name = product.Name,
+                Description = product.Description,
+                PriceSell = product.PriceSell,
+                PriceCost = product.PriceCost,
+                Rating = product.Rating,
+                CreatedAt = product.CreatedAt,
+                UpdatedAt = product.UpdatedAt,
+                Image = product.Image,
+                CategoryIds = productDto.CategoryIds ?? new List<int>()
+            };
+
             _logger.LogInformation("Created product ID: {ProductId} with inventory ID: {InventoryId}", product.ProductId, inventory.InventoryId);
-            return CreatedAtAction(nameof(GetById), new { id = product.ProductId }, product);
+            return CreatedAtAction(nameof(GetById), new { id = product.ProductId }, productDtoResponse);
         }
 
         [HttpPut("{id}")]
@@ -447,6 +487,7 @@ namespace HakiBaVuong.Controllers
             product.PriceSell = productDto.PriceSell;
             product.PriceCost = productDto.PriceCost;
             product.BrandId = productDto.BrandId;
+            product.Image = productDto.Image;
             product.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -460,9 +501,7 @@ namespace HakiBaVuong.Controllers
         {
             _logger.LogInformation("Delete product called for ID: {Id}", id);
 
-            var product = await _context.Products
-                .Include(p => p.ProductImages)
-                .FirstOrDefaultAsync(p => p.ProductId == id);
+            var product = await _context.Products.FindAsync(id);
             if (product == null)
             {
                 _logger.LogWarning("Product not found: {Id}", id);
@@ -521,25 +560,21 @@ namespace HakiBaVuong.Controllers
                 _context.Inventories.Remove(inventory);
             }
 
-            if (product.ProductImages != null)
+            if (!string.IsNullOrEmpty(product.Image))
             {
-                foreach (var image in product.ProductImages)
+                var imagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
+                if (System.IO.File.Exists(imagePath))
                 {
-                    var imagePath = Path.Combine(_environment.ContentRootPath, image.ImageUrl.TrimStart('/'));
-                    if (System.IO.File.Exists(imagePath))
+                    try
                     {
-                        try
-                        {
-                            System.IO.File.Delete(imagePath);
-                            _logger.LogInformation("Deleted image {ImageUrl} for product ID: {Id}", image.ImageUrl, id);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Failed to delete image {ImageUrl} for product ID: {Id}", image.ImageUrl, id);
-                        }
+                        System.IO.File.Delete(imagePath);
+                        _logger.LogInformation("Deleted image for product ID: {Id}", id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to delete image for product ID: {Id}", id);
                     }
                 }
-                _context.ProductImages.RemoveRange(product.ProductImages);
             }
 
             _context.Products.Remove(product);
@@ -548,7 +583,7 @@ namespace HakiBaVuong.Controllers
             return NoContent();
         }
 
-        [HttpPost("{id}/images")]
+        [HttpPost("{id}/upload-image")]
         [Authorize(Roles = "Admin,Staff,InventoryManager")]
         public async Task<IActionResult> UploadImage(int id, IFormFile file)
         {
@@ -634,104 +669,37 @@ namespace HakiBaVuong.Controllers
                 Directory.CreateDirectory(uploadsFolder);
             }
 
-            var imageCount = await _context.ProductImages.CountAsync(pi => pi.ProductId == id);
-            var fileName = $"product_{id}_{imageCount + 1}{extension}";
+            var fileName = $"product_{id}{extension}";
             var filePath = Path.Combine(uploadsFolder, fileName);
+
+            if (!string.IsNullOrEmpty(product.Image))
+            {
+                var oldImagePath = Path.Combine(_environment.ContentRootPath, product.Image.TrimStart('/'));
+                if (System.IO.File.Exists(oldImagePath))
+                {
+                    try
+                    {
+                        System.IO.File.Delete(oldImagePath);
+                        _logger.LogInformation("Deleted old image for product ID: {Id}", id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to delete old image for product ID: {Id}", id);
+                    }
+                }
+            }
 
             using (var stream = new FileStream(filePath, FileMode.Create))
             {
                 await file.CopyToAsync(stream);
             }
 
-            var productImage = new ProductImage
-            {
-                ProductId = id,
-                ImageUrl = $"/Images/{fileName}",
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _context.ProductImages.Add(productImage);
+            product.Image = $"/Images/{fileName}";
             product.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Uploaded image for product ID: {Id}, path: {ImageUrl}", id, productImage.ImageUrl);
-            return Ok(new { message = "Tải ảnh lên thành công.", imageUrl = productImage.ImageUrl });
-        }
-
-        [HttpDelete("images/{imageId}")]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")]
-        public async Task<IActionResult> DeleteImage(int imageId)
-        {
-            _logger.LogInformation("DeleteImage called for image ID: {ImageId}", imageId);
-
-            var image = await _context.ProductImages
-                .Include(pi => pi.Product)
-                .FirstOrDefaultAsync(pi => pi.ImageId == imageId);
-            if (image == null)
-            {
-                _logger.LogWarning("Image not found: {ImageId}", imageId);
-                return NotFound(new { message = "Ảnh không tồn tại." });
-            }
-
-            if (User.IsInRole("Staff") || User.IsInRole("InventoryManager"))
-            {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-                {
-                    _logger.LogWarning("Cannot determine userId from token.");
-                    return BadRequest(new { message = "Không thể xác định userId từ token." });
-                }
-
-                var user = await _context.Users.FindAsync(userId);
-                if (user == null)
-                {
-                    _logger.LogWarning("User not found: {UserId}", userId);
-                    return NotFound(new { message = "Người dùng không tồn tại." });
-                }
-
-                var brand = await _context.Brands.FindAsync(image.Product.BrandId);
-                if (brand == null)
-                {
-                    _logger.LogWarning("Brand not found for product ID: {ProductId}", image.ProductId);
-                    return NotFound(new { message = "Thương hiệu không tồn tại." });
-                }
-
-                int effectiveOwnerId;
-                if (user.BrandId.HasValue)
-                {
-                    var userBrand = await _context.Brands.FindAsync(user.BrandId.Value);
-                    if (userBrand == null)
-                    {
-                        _logger.LogWarning("Brand not found for BrandId: {BrandId}", user.BrandId);
-                        return NotFound(new { message = "Thương hiệu không tồn tại." });
-                    }
-                    effectiveOwnerId = userBrand.OwnerId;
-                }
-                else
-                {
-                    effectiveOwnerId = userId;
-                }
-
-                if (brand.OwnerId != effectiveOwnerId)
-                {
-                    _logger.LogWarning("Staff user {UserId} does not have access to product {ProductId}", userId, image.ProductId);
-                    return Forbid();
-                }
-            }
-
-            var imagePath = Path.Combine(_environment.ContentRootPath, image.ImageUrl.TrimStart('/'));
-            if (System.IO.File.Exists(imagePath))
-            {
-                System.IO.File.Delete(imagePath);
-                _logger.LogInformation("Deleted image {ImageUrl} for product ID: {ProductId}", image.ImageUrl, image.ProductId);
-            }
-
-            _context.ProductImages.Remove(image);
-            image.Product.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation("Deleted image ID: {ImageId}", imageId);
-            return NoContent();
+            _logger.LogInformation("Uploaded image for product ID: {Id}, path: {ImagePath}", id, product.Image);
+            return Ok(new { message = "Tải ảnh lên thành công.", imageUrl = product.Image });
         }
 
         [HttpPost("{id}/comments")]
@@ -837,7 +805,6 @@ namespace HakiBaVuong.Controllers
             var categoryIds = product.ProductCategories.Select(pc => pc.CategoryId).ToList();
             var relatedProducts = await _context.Products
                 .Include(p => p.Brand)
-                .Include(p => p.ProductImages)
                 .Include(p => p.ProductCategories)
                 .Where(p => p.ProductId != productId && p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)))
                 .Take(10)
@@ -852,7 +819,7 @@ namespace HakiBaVuong.Controllers
                     Rating = p.Rating,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
-                    ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                    Image = p.Image,
                     CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                 })
                 .ToListAsync();
@@ -877,12 +844,10 @@ namespace HakiBaVuong.Controllers
             var queryLower = query?.ToLower() ?? "";
             var queryable = _context.Products
                 .Include(p => p.Brand)
-                .Include(p => p.ProductImages)
                 .Include(p => p.ProductCategories)
                 .ThenInclude(pc => pc.Category)
                 .AsQueryable();
 
- 
             if (categoryIds != null && categoryIds.Any())
             {
                 queryable = queryable.Where(p => p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)));
@@ -904,7 +869,7 @@ namespace HakiBaVuong.Controllers
                     Rating = p.Rating,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
-                    ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                    Image = p.Image,
                     CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                 })
                 .ToListAsync();
@@ -933,11 +898,9 @@ namespace HakiBaVuong.Controllers
 
             var query = _context.Products
                 .Include(p => p.Brand)
-                .Include(p => p.ProductImages)
                 .Include(p => p.ProductCategories)
                 .ThenInclude(pc => pc.Category)
                 .AsQueryable();
-
 
             var recommendedByViewed = viewedProducts.Any()
                 ? await query.Where(p => viewedProducts.Contains(p.ProductId))
@@ -954,12 +917,11 @@ namespace HakiBaVuong.Controllers
                         Rating = p.Rating,
                         CreatedAt = p.CreatedAt,
                         UpdatedAt = p.UpdatedAt,
-                        ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                        Image = p.Image,
                         CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                     })
                     .ToListAsync()
                 : new List<ProductDTO>();
-
 
             var viewedProductsWithCategories = await _context.ViewedProducts
                 .Where(vp => vp.CustomerId == customerId)
@@ -989,13 +951,12 @@ namespace HakiBaVuong.Controllers
                         Rating = p.Rating,
                         CreatedAt = p.CreatedAt,
                         UpdatedAt = p.UpdatedAt,
-                        ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                        Image = p.Image,
                         CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                     })
                     .ToListAsync()
                 : new List<ProductDTO>();
 
- 
             var viewedBrands = await _context.ViewedProducts
                 .Where(vp => vp.CustomerId == customerId)
                 .Include(vp => vp.Product)
@@ -1018,7 +979,7 @@ namespace HakiBaVuong.Controllers
                         Rating = p.Rating,
                         CreatedAt = p.CreatedAt,
                         UpdatedAt = p.UpdatedAt,
-                        ProductImages = p.ProductImages.Select(pi => pi.ImageUrl).ToList(),
+                        Image = p.Image,
                         CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                     })
                     .ToListAsync()
@@ -1073,10 +1034,30 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Đã ghi nhận sản phẩm đã xem." });
         }
 
+        [HttpGet("brand-name/{brandId}")]
+        public async Task<ActionResult<string>> GetBrandName(int brandId)
+        {
+            _logger.LogInformation("GetBrandName called for brand ID: {BrandId}", brandId);
+
+            var brand = await _context.Brands
+                .Where(b => b.BrandId == brandId)
+                .Select(b => b.Name)
+                .FirstOrDefaultAsync();
+
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", brandId);
+                return NotFound(new { message = "Thương hiệu không tồn tại." });
+            }
+
+            return Ok(brand);
+        }
+
         private int? GetCustomerId()
         {
             var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(customerIdClaim, out int customerId) ? customerId : null;
         }
+
     }
 }
