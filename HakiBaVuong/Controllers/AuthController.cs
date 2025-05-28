@@ -14,6 +14,7 @@ using System.Net;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 
 [Route("api/auth")]
 [ApiController]
@@ -278,6 +279,34 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Đặt lại mật khẩu thành công." });
     }
 
+    [HttpGet("user-info")]
+    [Authorize]
+    public async Task<IActionResult> GetUserInfo()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+        {
+            _logger.LogWarning("Không tìm thấy hoặc ID người dùng không hợp lệ trong token.");
+            return Unauthorized(new { message = "Token không hợp lệ." });
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+        if (user == null)
+        {
+            _logger.LogWarning("Không tìm thấy người dùng với ID: {UserId}", userId);
+            return NotFound(new { message = "Không tìm thấy người dùng." });
+        }
+
+        return Ok(new
+        {
+            userId = user.UserId,
+            email = user.Email,
+            role = user.Role,
+            approvalStatus = user.ApprovalStatus,
+            brandId = user.BrandId
+        });
+    }
+
     private string GenerateOtp()
     {
         return new Random().Next(100000, 999999).ToString();
@@ -399,7 +428,7 @@ public class AuthController : ControllerBase
         var token = GenerateJwtToken(user);
         _logger.LogInformation("Đăng nhập Google thành công cho email: {Email}", email);
 
-        return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&userId={user.UserId}");
+        return Redirect($"http://localhost:5173/brand-login?token={Uri.EscapeDataString(token)}&userId={user.UserId}");
     }
 
     [HttpGet("login-facebook-brand")]
@@ -451,6 +480,6 @@ public class AuthController : ControllerBase
         var token = GenerateJwtToken(user);
         _logger.LogInformation("Đăng nhập Facebook thành công cho email: {Email}", email);
 
-        return Redirect($"http://localhost:5173/login?token={Uri.EscapeDataString(token)}&userId={user.UserId}");
+        return Redirect($"http://localhost:5173/brand-login?token={Uri.EscapeDataString(token)}&userId={user.UserId}");
     }
 }
