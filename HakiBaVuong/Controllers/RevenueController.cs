@@ -27,10 +27,9 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("brand/{brandId}")]
-        public async Task<ActionResult<RevenueResponseDTO>> GetRevenueByBrand(int brandId, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate, [FromQuery] string? groupBy, [FromQuery] decimal? minProfit, [FromQuery] decimal? maxProfit, [FromQuery] decimal? minRevenue, [FromQuery] decimal? maxRevenue, [FromQuery] int? productId)
+        public async Task<ActionResult<RevenueResponseDTO>> GetRevenueByBrand(int brandId, [FromQuery] string periodType = "Day")
         {
-            _logger.LogInformation("GetRevenueByBrand called for brand {BrandId}, startDate: {StartDate}, endDate: {EndDate}, groupBy: {GroupBy}, minProfit: {MinProfit}, maxProfit: {MaxProfit}, minRevenue: {MinRevenue}, maxRevenue: {MaxRevenue}, productId: {ProductId}",
-                brandId, startDate?.ToString("yyyy-MM-dd"), endDate?.ToString("yyyy-MM-dd"), groupBy, minProfit, maxProfit, minRevenue, maxRevenue, productId);
+            _logger.LogInformation("GetRevenueByBrand called for brand {BrandId}, periodType: {PeriodType}", brandId, periodType);
 
             var userId = GetUserId();
             if (!userId.HasValue)
@@ -59,206 +58,222 @@ namespace HakiBaVuong.Controllers
 
             try
             {
-                var query = _context.Orders
-                    .Where(o => o.BrandId == brandId && o.Status == "Đã thanh toán")
-                    .Include(o => o.OrderItems)
-                    .ThenInclude(i => i.Product)
-                    .Include(o => o.Payment)
-                    .AsQueryable();
+                var response = new RevenueResponseDTO { BrandId = brandId };
 
-                if (startDate.HasValue)
+                var today = DateTime.UtcNow.Date;
+                var currentMonth = new DateTime(today.Year, today.Month, 1);
+                var currentYear = new DateTime(today.Year, 1, 1);
+
+                // Reset Revenue if new period
+                var revenues = await _context.Revenues
+                    .Include(r => r.Order)
+                    .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
+                    .ToListAsync();
+
+                foreach (var revenue in revenues)
                 {
-                    query = query.Where(o => o.CreatedAt >= startDate.Value);
+                    if (revenue.Date.Date < today)
+                    {
+                        revenue.DailyRevenue = 0;
+                    }
+                    if (revenue.Date < currentMonth)
+                    {
+                        revenue.MonthlyRevenue = 0;
+                    }
+                    if (revenue.Date < currentYear)
+                    {
+                        revenue.YearlyRevenue = 0;
+                    }
+                    _context.Revenues.Update(revenue);
                 }
+                await _context.SaveChangesAsync();
 
-                if (endDate.HasValue)
+                // Get Revenue for current period
+                var currentRevenue = await _context.Revenues
+                    .Include(r => r.Order)
+                    .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
+                    .GroupBy(r => r.Order.BrandId)
+                    .Select(g => new
+                    {
+                        TotalDailyRevenue = g.Sum(r => r.DailyRevenue),
+                        TotalMonthlyRevenue = g.Sum(r => r.MonthlyRevenue),
+                        TotalYearlyRevenue = g.Sum(r => r.YearlyRevenue),
+                        OrderCount = g.Count()
+                    })
+                    .FirstOrDefaultAsync();
+
+                response.TotalRevenue = periodType switch
                 {
-                    query = query.Where(o => o.CreatedAt <= endDate.Value.AddDays(1).AddTicks(-1));
-                }
+                    "Month" => currentRevenue?.TotalMonthlyRevenue ?? 0,
+                    "Year" => currentRevenue?.TotalYearlyRevenue ?? 0,
+                    _ => currentRevenue?.TotalDailyRevenue ?? 0
+                };
+                response.OrderCount = currentRevenue?.OrderCount ?? 0;
 
-                var orders = await query.ToListAsync();
-                var response = new RevenueResponseDTO { BrandId = brandId, StartDate = startDate, EndDate = endDate };
+                // Get RevenueHistory for chart
+                var revenueHistory = await _context.RevenueHistories
+                    .Where(rh => rh.BrandId == brandId && rh.PeriodType == periodType)
+                    .OrderBy(rh => rh.Date)
+                    .ToListAsync();
 
-
-                switch (groupBy?.ToLower())
+                response.RevenueGroups = revenueHistory.Select(rh => new RevenueGroupDTO
                 {
-                    case "day":
-                        var dailyRevenue = orders
-                            .Where(o => !productId.HasValue || o.OrderItems.Any(i => i.ProductId == productId.Value))
-                            .GroupBy(o => o.CreatedAt.Date)
-                            .Select(g => new RevenueGroupDTO
-                            {
-                                GroupKey = g.Key.ToString("yyyy-MM-dd"),
-                                TotalRevenue = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => i.Price * i.Quantity)),
-                                TotalCost = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity)),
-                                TotalProfit = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => (i.Price - (i.Product.PriceCost ?? 0)) * i.Quantity)),
-                                OrderCount = g.Count(o => o.OrderItems.Any(i => !productId.HasValue || i.ProductId == productId.Value))
-                            })
-                            .ToList();
+                    GroupKey = periodType switch
+                    {
+                        "Month" => rh.Date.ToString("yyyy-MM"),
+                        "Year" => rh.Date.ToString("yyyy"),
+                        _ => rh.Date.ToString("yyyy-MM-dd")
+                    },
+                    TotalRevenue = periodType switch
+                    {
+                        "Month" => rh.MonthlyRevenue,
+                        "Year" => rh.YearlyRevenue,
+                        _ => rh.DailyRevenue
+                    },
+                    TotalCost = 0, // Tạm thời không tính TotalCost
+                    TotalProfit = 0, // Tạm thời không tính TotalProfit
+                    OrderCount = 0 // Có thể cập nhật nếu cần
+                }).ToList();
 
-                        if (minProfit.HasValue || maxProfit.HasValue || minRevenue.HasValue || maxRevenue.HasValue)
-                        {
-                            dailyRevenue = dailyRevenue
-                                .Where(r => (!minProfit.HasValue || r.TotalProfit >= minProfit.Value) &&
-                                            (!maxProfit.HasValue || r.TotalProfit <= maxProfit.Value) &&
-                                            (!minRevenue.HasValue || r.TotalRevenue >= minRevenue.Value) &&
-                                            (!maxRevenue.HasValue || r.TotalRevenue <= maxRevenue.Value))
-                                .ToList();
-                        }
-                        response.RevenueGroups = dailyRevenue;
-                        break;
-
-                    case "month":
-                        var monthlyRevenue = orders
-                            .Where(o => !productId.HasValue || o.OrderItems.Any(i => i.ProductId == productId.Value))
-                            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month })
-                            .Select(g => new RevenueGroupDTO
-                            {
-                                GroupKey = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("yyyy-MM"),
-                                TotalRevenue = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => i.Price * i.Quantity)),
-                                TotalCost = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity)),
-                                TotalProfit = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => (i.Price - (i.Product.PriceCost ?? 0)) * i.Quantity)),
-                                OrderCount = g.Count(o => o.OrderItems.Any(i => !productId.HasValue || i.ProductId == productId.Value))
-                            })
-                            .ToList();
-
-                        if (minProfit.HasValue || maxProfit.HasValue || minRevenue.HasValue || maxRevenue.HasValue)
-                        {
-                            monthlyRevenue = monthlyRevenue
-                                .Where(r => (!minProfit.HasValue || r.TotalProfit >= minProfit.Value) &&
-                                            (!maxProfit.HasValue || r.TotalProfit <= maxProfit.Value) &&
-                                            (!minRevenue.HasValue || r.TotalRevenue >= minRevenue.Value) &&
-                                            (!maxRevenue.HasValue || r.TotalRevenue <= maxRevenue.Value))
-                                .ToList();
-                        }
-                        response.RevenueGroups = monthlyRevenue;
-                        break;
-
-                    case "year":
-                        var yearlyRevenue = orders
-                            .Where(o => !productId.HasValue || o.OrderItems.Any(i => i.ProductId == productId.Value))
-                            .GroupBy(o => o.CreatedAt.Year)
-                            .Select(g => new RevenueGroupDTO
-                            {
-                                GroupKey = g.Key.ToString(),
-                                TotalRevenue = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => i.Price * i.Quantity)),
-                                TotalCost = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity)),
-                                TotalProfit = g.Sum(o => o.OrderItems.Where(i => !productId.HasValue || i.ProductId == productId.Value).Sum(i => (i.Price - (i.Product.PriceCost ?? 0)) * i.Quantity)),
-                                OrderCount = g.Count(o => o.OrderItems.Any(i => !productId.HasValue || i.ProductId == productId.Value))
-                            })
-                            .ToList();
-
-                        if (minProfit.HasValue || maxProfit.HasValue || minRevenue.HasValue || maxRevenue.HasValue)
-                        {
-                            yearlyRevenue = yearlyRevenue
-                                .Where(r => (!minProfit.HasValue || r.TotalProfit >= minProfit.Value) &&
-                                            (!maxProfit.HasValue || r.TotalProfit <= maxProfit.Value) &&
-                                            (!minRevenue.HasValue || r.TotalRevenue >= minRevenue.Value) &&
-                                            (!maxRevenue.HasValue || r.TotalRevenue <= maxRevenue.Value))
-                                .ToList();
-                        }
-                        response.RevenueGroups = yearlyRevenue;
-                        break;
-
-                    case "product":
-                        var productRevenue = orders
-                            .SelectMany(o => o.OrderItems)
-                            .Where(i => !productId.HasValue || i.ProductId == productId.Value)
-                            .GroupBy(i => new { i.ProductId, i.ProductName })
-                            .Select(g => new RevenueGroupDTO
-                            {
-                                GroupKey = $"{g.Key.ProductId} - {g.Key.ProductName}",
-                                TotalRevenue = g.Sum(i => i.Price * i.Quantity),
-                                TotalCost = g.Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity),
-                                TotalProfit = g.Sum(i => (i.Price - (i.Product.PriceCost ?? 0)) * i.Quantity),
-                                OrderCount = g.Count()
-                            })
-                            .ToList();
-                        // Lọc theo minProfit, maxProfit, minRevenue, maxRevenue
-                        if (minProfit.HasValue || maxProfit.HasValue || minRevenue.HasValue || maxRevenue.HasValue)
-                        {
-                            productRevenue = productRevenue
-                                .Where(r => (!minProfit.HasValue || r.TotalProfit >= minProfit.Value) &&
-                                            (!maxProfit.HasValue || r.TotalProfit <= maxProfit.Value) &&
-                                            (!minRevenue.HasValue || r.TotalRevenue >= minRevenue.Value) &&
-                                            (!maxRevenue.HasValue || r.TotalRevenue <= maxRevenue.Value))
-                                .ToList();
-                        }
-                        response.RevenueGroups = productRevenue;
-                        break;
-
-                    case "brand":
-                    default:
-                        var totalRevenue = orders.Sum(o => o.TotalAmount);
-                        var totalCost = orders.Sum(o => o.OrderItems.Sum(i => (i.Product.PriceCost ?? 0) * i.Quantity));
-                        var totalProfit = totalRevenue - totalCost;
-
-                        var hasMissingPriceCost = orders.Any(o => o.OrderItems.Any(i => i.Product.PriceCost == null || i.Product.PriceCost == 0));
-                        if (hasMissingPriceCost)
-                        {
-                            _logger.LogWarning("Missing or zero PriceCost values detected for some products in brand {BrandId}. TotalCost may be inaccurate.", brandId);
-                        }
-
-                        if (totalRevenue == totalProfit && totalRevenue > 0)
-                        {
-                            _logger.LogWarning("TotalRevenue equals TotalProfit for brand {BrandId}. TotalCost is {TotalCost}. Verify PriceCost data.", brandId, totalCost);
-                        }
-
-                        // Lọc tổng doanh thu và lợi nhuận
-                        if (minProfit.HasValue || maxProfit.HasValue || minRevenue.HasValue || maxRevenue.HasValue)
-                        {
-                            if ((minProfit.HasValue && totalProfit < minProfit.Value) ||
-                                (maxProfit.HasValue && totalProfit > maxProfit.Value) ||
-                                (minRevenue.HasValue && totalRevenue < minRevenue.Value) ||
-                                (maxRevenue.HasValue && totalRevenue > maxRevenue.Value))
-                            {
-                                return Ok(response); // Trả về response rỗng nếu không khớp điều kiện
-                            }
-                        }
-
-                        response.TotalRevenue = totalRevenue;
-                        response.TotalProfit = totalProfit;
-                        response.OrderCount = orders.Count;
-                        response.Orders = orders.Select(o => new OrderDTO
-                        {
-                            OrderId = o.OrderId,
-                            BrandId = o.BrandId,
-                            CustomerId = o.CustomerId,
-                            FullName = o.FullName,
-                            Phone = o.Phone,
-                            Address = o.Address,
-                            Status = o.Status,
-                            DeliveryStatus = o.DeliveryStatus,
-                            EstimatedDeliveryDate = o.EstimatedDeliveryDate,
-                            TotalAmount = o.TotalAmount,
-                            CreatedAt = o.CreatedAt,
-                            OrderItems = o.OrderItems.Select(i => new OrderItemDTO
-                            {
-                                ItemId = i.ItemId,
-                                OrderId = i.OrderId,
-                                ProductId = i.ProductId,
-                                ProductName = i.ProductName,
-                                Quantity = i.Quantity,
-                                Price = i.Price
-                            }).ToList(),
-                            Payment = o.Payment != null ? new PaymentDTO
-                            {
-                                PaymentId = o.Payment.PaymentId,
-                                Amount = o.Payment.Amount,
-                                Method = o.Payment.Method,
-                                Status = o.Payment.Status
-                            } : null
-                        }).ToList();
-                        break;
-                }
-
-                _logger.LogInformation("Retrieved revenue data for brand {BrandId} with {OrderCount} orders", brandId, orders.Count);
+                _logger.LogInformation("Retrieved revenue data for brand {BrandId} with {OrderCount} orders", brandId, response.OrderCount);
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while fetching revenue and profit for brand {BrandId}", brandId);
-                return StatusCode(500, new { message = "Lỗi khi tính doanh thu và lợi nhuận. Vui lòng thử lại sau." });
+                _logger.LogError(ex, "Error occurred while fetching revenue for brand {BrandId}", brandId);
+                return StatusCode(500, new { message = "Lỗi khi lấy dữ liệu doanh thu. Vui lòng thử lại sau." });
+            }
+        }
+
+        [HttpGet("brand/{brandId}/all")]
+        public async Task<ActionResult<RevenueAllPeriodsDTO>> GetAllRevenueByBrand(int brandId)
+        {
+            _logger.LogInformation("GetAllRevenueByBrand called for brand {BrandId}", brandId);
+
+            var userId = GetUserId();
+            if (!userId.HasValue)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var brand = await _context.Brands.FindAsync(brandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", brandId);
+                return NotFound(new { message = "Brand không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
+            {
+                var hasPermission = await _context.StaffPermissions
+                    .AnyAsync(sp => sp.StaffId == userId.Value);
+                if (!hasPermission)
+                {
+                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId.Value, brandId);
+                    return Forbid();
+                }
+            }
+
+            try
+            {
+                var today = DateTime.UtcNow.Date;
+                var currentMonth = new DateTime(today.Year, today.Month, 1);
+                var currentYear = new DateTime(today.Year, 1, 1);
+
+                // Reset Revenue if new period
+                var revenues = await _context.Revenues
+                    .Include(r => r.Order)
+                    .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
+                    .ToListAsync();
+
+                foreach (var revenue in revenues)
+                {
+                    if (revenue.Date.Date < today)
+                    {
+                        revenue.DailyRevenue = 0;
+                    }
+                    if (revenue.Date < currentMonth)
+                    {
+                        revenue.MonthlyRevenue = 0;
+                    }
+                    if (revenue.Date < currentYear)
+                    {
+                        revenue.YearlyRevenue = 0;
+                    }
+                    _context.Revenues.Update(revenue);
+                }
+                await _context.SaveChangesAsync();
+
+                // Get aggregated revenue
+                var currentRevenue = await _context.Revenues
+                    .Include(r => r.Order)
+                    .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
+                    .GroupBy(r => r.Order.BrandId)
+                    .Select(g => new
+                    {
+                        TotalDailyRevenue = g.Sum(r => r.DailyRevenue),
+                        TotalMonthlyRevenue = g.Sum(r => r.MonthlyRevenue),
+                        TotalYearlyRevenue = g.Sum(r => r.YearlyRevenue),
+                        OrderCount = g.Count()
+                    })
+                    .FirstOrDefaultAsync();
+
+                // Get RevenueHistory for all periods
+                var revenueHistories = await _context.RevenueHistories
+                    .Where(rh => rh.BrandId == brandId)
+                    .OrderBy(rh => rh.Date)
+                    .ToListAsync();
+
+                var response = new RevenueAllPeriodsDTO
+                {
+                    BrandId = brandId,
+                    TotalDailyRevenue = currentRevenue?.TotalDailyRevenue ?? 0,
+                    TotalMonthlyRevenue = currentRevenue?.TotalMonthlyRevenue ?? 0,
+                    TotalYearlyRevenue = currentRevenue?.TotalYearlyRevenue ?? 0,
+                    OrderCount = currentRevenue?.OrderCount ?? 0,
+                    RevenueGroups = new Dictionary<string, List<RevenueGroupDTO>>
+                    {
+                        ["Day"] = revenueHistories
+                            .Where(rh => rh.PeriodType == "Day")
+                            .Select(rh => new RevenueGroupDTO
+                            {
+                                GroupKey = rh.Date.ToString("yyyy-MM-dd"),
+                                TotalRevenue = rh.DailyRevenue,
+                                TotalCost = 0,
+                                TotalProfit = 0,
+                                OrderCount = 0
+                            }).ToList(),
+                        ["Month"] = revenueHistories
+                            .Where(rh => rh.PeriodType == "Month")
+                            .Select(rh => new RevenueGroupDTO
+                            {
+                                GroupKey = rh.Date.ToString("yyyy-MM"),
+                                TotalRevenue = rh.MonthlyRevenue,
+                                TotalCost = 0,
+                                TotalProfit = 0,
+                                OrderCount = 0
+                            }).ToList(),
+                        ["Year"] = revenueHistories
+                            .Where(rh => rh.PeriodType == "Year")
+                            .Select(rh => new RevenueGroupDTO
+                            {
+                                GroupKey = rh.Date.ToString("yyyy"),
+                                TotalRevenue = rh.YearlyRevenue,
+                                TotalCost = 0,
+                                TotalProfit = 0,
+                                OrderCount = 0
+                            }).ToList()
+                    }
+                };
+
+                _logger.LogInformation("Retrieved all revenue data for brand {BrandId} with {OrderCount} orders", brandId, response.OrderCount);
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error occurred while fetching all revenue for brand {BrandId}", brandId);
+                return StatusCode(500, new { message = "Lỗi khi lấy dữ liệu doanh thu. Vui lòng thử lại sau." });
             }
         }
 
@@ -267,5 +282,16 @@ namespace HakiBaVuong.Controllers
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(userIdClaim, out int userId) ? userId : null;
         }
+    }
+
+    // DTO mới để hỗ trợ cả ba kỳ
+    public class RevenueAllPeriodsDTO
+    {
+        public int BrandId { get; set; }
+        public decimal TotalDailyRevenue { get; set; }
+        public decimal TotalMonthlyRevenue { get; set; }
+        public decimal TotalYearlyRevenue { get; set; }
+        public int OrderCount { get; set; }
+        public Dictionary<string, List<RevenueGroupDTO>> RevenueGroups { get; set; }
     }
 }

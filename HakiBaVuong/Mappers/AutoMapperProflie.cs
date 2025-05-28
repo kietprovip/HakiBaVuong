@@ -71,7 +71,11 @@ namespace sexthu.Mappers
 
             CreateMap<PayOrderDTO, Payment>()
                 .ForMember(dest => dest.Method, opt => opt.Condition(src => !string.IsNullOrEmpty(src.PaymentMethod)));
+
             CreateMap<Category, CategoryDTO>().ReverseMap();
+
+            CreateMap<Revenue, RevenueDTO>().ReverseMap();
+            CreateMap<RevenueHistory, RevenueHistoryDTO>().ReverseMap();
         }
     }
 }

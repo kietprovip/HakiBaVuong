@@ -23,6 +23,9 @@ namespace HakiBaVuong.Data
         public DbSet<Category> Categories { get; set; }
         public DbSet<ProductCategory> ProductCategories { get; set; }
         public DbSet<ViewedProduct> ViewedProducts { get; set; }
+        public DbSet<Revenue> Revenues { get; set; }
+        public DbSet<RevenueHistory> RevenueHistories { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Product>()
@@ -39,6 +42,30 @@ namespace HakiBaVuong.Data
 
             modelBuilder.Entity<OrderItem>()
                 .Property(oi => oi.Price)
+                .HasColumnType("decimal(10,2)");
+
+            modelBuilder.Entity<Revenue>()
+                .Property(r => r.DailyRevenue)
+                .HasColumnType("decimal(10,2)");
+
+            modelBuilder.Entity<Revenue>()
+                .Property(r => r.MonthlyRevenue)
+                .HasColumnType("decimal(10,2)");
+
+            modelBuilder.Entity<Revenue>()
+                .Property(r => r.YearlyRevenue)
+                .HasColumnType("decimal(10,2)");
+
+            modelBuilder.Entity<RevenueHistory>()
+                .Property(rh => rh.DailyRevenue)
+                .HasColumnType("decimal(10,2)");
+
+            modelBuilder.Entity<RevenueHistory>()
+                .Property(rh => rh.MonthlyRevenue)
+                .HasColumnType("decimal(10,2)");
+
+            modelBuilder.Entity<RevenueHistory>()
+                .Property(rh => rh.YearlyRevenue)
                 .HasColumnType("decimal(10,2)");
 
             modelBuilder.Entity<Brand>()
@@ -124,6 +151,7 @@ namespace HakiBaVuong.Data
                 .WithMany(c => c.ProductCategories)
                 .HasForeignKey(pc => pc.CategoryId)
                 .OnDelete(DeleteBehavior.Cascade);
+
             modelBuilder.Entity<ViewedProduct>()
                 .HasKey(vp => new { vp.CustomerId, vp.ProductId });
 
@@ -137,6 +165,18 @@ namespace HakiBaVuong.Data
                 .HasOne(vp => vp.Product)
                 .WithMany()
                 .HasForeignKey(vp => vp.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Revenue>()
+                .HasOne(r => r.Order)
+                .WithMany()
+                .HasForeignKey(r => r.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<RevenueHistory>()
+                .HasOne(rh => rh.Brand)
+                .WithMany()
+                .HasForeignKey(rh => rh.BrandId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             base.OnModelCreating(modelBuilder);
