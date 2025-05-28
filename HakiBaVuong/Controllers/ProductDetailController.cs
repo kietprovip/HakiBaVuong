@@ -23,7 +23,6 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("{id}")]
-        [Authorize]
         public async Task<ActionResult<ProductDTO>> GetProductDetail(int id)
         {
             _logger.LogInformation("GetProductDetail called for product ID: {Id}", id);
@@ -41,7 +40,6 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("{id}/rating")]
-        [Authorize]
         public async Task<ActionResult<float>> GetProductRating(int id)
         {
             _logger.LogInformation("GetProductRating called for product ID: {Id}", id);
@@ -60,7 +58,6 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("{id}/comments")]
-        [Authorize]
         public async Task<ActionResult<IEnumerable<CommentDTO>>> GetProductComments(int id)
         {
             _logger.LogInformation("GetProductComments called for product ID: {Id}", id);
