@@ -9,7 +9,6 @@ namespace HakiBaVuong.Data
 
         public DbSet<User> Users { get; set; }
         public DbSet<Brand> Brands { get; set; }
-        public DbSet<StaffPermission> StaffPermissions { get; set; }
         public DbSet<Customer> Customers { get; set; }
         public DbSet<CustomerAddress> CustomerAddresses { get; set; }
         public DbSet<Product> Products { get; set; }
@@ -72,15 +71,6 @@ namespace HakiBaVuong.Data
                 .HasOne(b => b.Owner)
                 .WithMany()
                 .HasForeignKey(b => b.OwnerId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<StaffPermission>()
-                .HasKey(sp => new { sp.StaffId, sp.Role });
-
-            modelBuilder.Entity<StaffPermission>()
-                .HasOne(sp => sp.Staff)
-                .WithMany()
-                .HasForeignKey(sp => sp.StaffId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<CustomerAddress>()

@@ -545,21 +545,6 @@ namespace HakiBaVuong.Migrations
                     b.ToTable("RevenueHistories");
                 });
 
-            modelBuilder.Entity("HakiBaVuong.Models.StaffPermission", b =>
-                {
-                    b.Property<int>("StaffId")
-                        .HasColumnType("int")
-                        .HasColumnOrder(1);
-
-                    b.Property<string>("Role")
-                        .HasColumnType("nvarchar(450)")
-                        .HasColumnOrder(2);
-
-                    b.HasKey("StaffId", "Role");
-
-                    b.ToTable("StaffPermissions");
-                });
-
             modelBuilder.Entity("HakiBaVuong.Models.User", b =>
                 {
                     b.Property<int>("UserId")
@@ -826,17 +811,6 @@ namespace HakiBaVuong.Migrations
                         .IsRequired();
 
                     b.Navigation("Brand");
-                });
-
-            modelBuilder.Entity("HakiBaVuong.Models.StaffPermission", b =>
-                {
-                    b.HasOne("HakiBaVuong.Models.User", "Staff")
-                        .WithMany()
-                        .HasForeignKey("StaffId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Staff");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.User", b =>

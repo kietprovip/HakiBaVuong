@@ -1,4 +1,5 @@
-﻿using HakiBaVuong.Models;
+﻿using HakiBaVuong.DTOs;
+using HakiBaVuong.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -48,7 +49,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<StaffPermission>>> GetAll()
+        public async Task<ActionResult<IEnumerable<UserDTO>>> GetAll()
         {
             var userId = GetUserId();
             if (!userId.HasValue)
@@ -63,13 +64,25 @@ namespace HakiBaVuong.Controllers
                 return StatusCode(403, new { message = "Bạn không có quyền truy cập API này." });
             }
 
-            _logger.LogInformation("GetAll staff roles called");
-            var staffPermissions = await _context.StaffPermissions.ToListAsync();
-            return Ok(staffPermissions);
+            _logger.LogInformation("GetAll staff called");
+            var staff = await _context.Users
+                .Where(u => u.BrandId != null && u.ApprovalStatus == "Approved")
+                .Select(u => new UserDTO
+                {
+                    UserId = u.UserId,
+                    Name = u.Name,
+                    Email = u.Email,
+                    Role = u.Role,
+                    BrandId = u.BrandId,
+                    ApprovalStatus = u.ApprovalStatus,
+                    CreatedAt = u.CreatedAt
+                })
+                .ToListAsync();
+            return Ok(staff);
         }
 
         [HttpPost("assign")]
-        public async Task<IActionResult> AssignRoles([FromBody] AssignRoleDto dto)
+        public async Task<IActionResult> AssignRole([FromBody] AssignRoleDto dto)
         {
             var userId = GetUserId();
             if (!userId.HasValue)
@@ -90,37 +103,25 @@ namespace HakiBaVuong.Controllers
                 return StatusCode(403, new { message = "Bạn không có quyền quản lý nhân viên này." });
             }
 
-            _logger.LogInformation("AssignRoles called for staff ID: {StaffId}", dto.StaffId);
+            _logger.LogInformation("AssignRole called for staff ID: {StaffId}", dto.StaffId);
 
             var staff = await _context.Users.FindAsync(dto.StaffId);
-            if (staff == null || (staff.Role != "Staff" && staff.Role != "InventoryManager" && staff.Role != "BrandManager"))
+            if (staff == null)
             {
-                _logger.LogWarning("Staff not found or invalid role for ID: {StaffId}", dto.StaffId);
-                return BadRequest(new { message = "Nhân viên không tồn tại hoặc không hợp lệ." });
+                _logger.LogWarning("Staff not found for ID: {StaffId}", dto.StaffId);
+                return BadRequest(new { message = "Nhân viên không tồn tại." });
             }
 
-
-            var validRoles = new List<string> { "Staff", "InventoryManager", "BrandManager" };
-            if (dto.Roles.Any(role => !validRoles.Contains(role)))
+            var validRoles = new List<string> { "InventoryManager", "BrandManager" };
+            if (!validRoles.Contains(dto.Role))
             {
                 _logger.LogWarning("Invalid role assignment for staff ID: {StaffId}", dto.StaffId);
-                return BadRequest(new { message = "Một hoặc nhiều vai trò không hợp lệ." });
+                return BadRequest(new { message = "Vai trò không hợp lệ." });
             }
 
-
-            var existingRoles = await _context.StaffPermissions
-                .Where(sp => sp.StaffId == dto.StaffId)
-                .ToListAsync();
-            _context.StaffPermissions.RemoveRange(existingRoles);
-
-
-            foreach (var role in dto.Roles)
-            {
-                _context.StaffPermissions.Add(new StaffPermission { StaffId = dto.StaffId, Role = role });
-            }
-
+            staff.Role = dto.Role;
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Assigned roles to staff ID: {StaffId}", dto.StaffId);
+            _logger.LogInformation("Assigned role to staff ID: {StaffId}", dto.StaffId);
             return Ok(new { message = "Phân công vai trò thành công." });
         }
 
@@ -136,11 +137,16 @@ namespace HakiBaVuong.Controllers
 
             _logger.LogInformation("CheckRole called for role: {RoleName}", roleName);
 
-            var hasRole = await _context.StaffPermissions
-                .AnyAsync(sp => sp.StaffId == userId.Value && sp.Role == roleName);
-
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found for ID: {UserId}", userId);
+                return Unauthorized(new { message = "Người dùng không tồn tại." });
+            }
 
             var isBrandOwner = await IsBrandOwner(userId.Value);
+            var hasRole = user.Role == roleName;
+
             if (hasRole || isBrandOwner)
             {
                 return Ok(new { hasAccess = true });
@@ -154,6 +160,6 @@ namespace HakiBaVuong.Controllers
     public class AssignRoleDto
     {
         public int StaffId { get; set; }
-        public List<string> Roles { get; set; }
+        public string Role { get; set; }
     }
 }

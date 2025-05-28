@@ -23,7 +23,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Admin,Staff")] // Cho phép cả Admin và Staff
+        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Cho phép cả Admin và Staff
         public async Task<ActionResult<IEnumerable<CategoryDTO>>> GetAll()
         {
             _logger.LogInformation("GetAll categories called");

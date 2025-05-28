@@ -40,7 +40,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,InventoryManager,BrandManager")]
         public async Task<ActionResult<IEnumerable<Brand>>> GetAll()
         {
             _logger.LogInformation("GetAll brands called");
@@ -92,7 +92,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,InventoryManager,BrandManager")]
         public async Task<ActionResult<Brand>> GetById(int id)
         {
             _logger.LogInformation("GetById called for brand {BrandId}", id);
@@ -108,7 +108,7 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff"))
+            if (User.IsInRole("Staff") || User.IsInRole("InventoryManager"))
             {
                 var userId = GetUserId();
                 if (!userId.HasValue)

@@ -10,7 +10,6 @@ namespace sexthu.Mappers
         {
             CreateMap<User, UserDTO>().ReverseMap();
             CreateMap<Brand, BrandDTO>().ReverseMap();
-            CreateMap<StaffPermission, StaffPermissionDTO>().ReverseMap();
             CreateMap<Customer, CustomerDTO>()
                 .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses))
                 .ReverseMap();

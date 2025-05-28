@@ -14,7 +14,7 @@ namespace HakiBaVuong.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize]
     public class RevenueController : ControllerBase
     {
         private readonly DataContext _context;
@@ -24,6 +24,27 @@ namespace HakiBaVuong.Controllers
         {
             _context = context;
             _logger = logger;
+        }
+
+        private int? GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(userIdClaim, out int userId) ? userId : null;
+        }
+
+        private async Task<bool> IsBrandOwner(int userId)
+        {
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null || user.BrandId != null) return false;
+
+            var brands = await _context.Brands.Where(b => b.OwnerId == userId).ToListAsync();
+            return brands.Any();
+        }
+
+        private async Task<bool> HasBrandManagerRole(int userId, int brandId)
+        {
+            var user = await _context.Users.FindAsync(userId);
+            return user != null && user.BrandId == brandId && user.Role == "BrandManager" && user.ApprovalStatus == "Approved";
         }
 
         [HttpGet("brand/{brandId}")]
@@ -45,15 +66,13 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
+            var isBrandOwner = await IsBrandOwner(userId.Value);
+            var hasBrandManagerRole = await HasBrandManagerRole(userId.Value, brandId);
+
+            if (!isBrandOwner && !hasBrandManagerRole)
             {
-                var hasPermission = await _context.StaffPermissions
-                    .AnyAsync(sp => sp.StaffId == userId.Value);
-                if (!hasPermission)
-                {
-                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId.Value, brandId);
-                    return Forbid();
-                }
+                _logger.LogWarning("User {UserId} does not have permission for brand {BrandId}", userId.Value, brandId);
+                return StatusCode(403, new { message = "Bạn không có quyền truy cập API này." });
             }
 
             try
@@ -64,7 +83,6 @@ namespace HakiBaVuong.Controllers
                 var currentMonth = new DateTime(today.Year, today.Month, 1);
                 var currentYear = new DateTime(today.Year, 1, 1);
 
-                // Reset Revenue if new period
                 var revenues = await _context.Revenues
                     .Include(r => r.Order)
                     .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
@@ -88,7 +106,6 @@ namespace HakiBaVuong.Controllers
                 }
                 await _context.SaveChangesAsync();
 
-                // Get Revenue for current period
                 var currentRevenue = await _context.Revenues
                     .Include(r => r.Order)
                     .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
@@ -110,7 +127,6 @@ namespace HakiBaVuong.Controllers
                 };
                 response.OrderCount = currentRevenue?.OrderCount ?? 0;
 
-                // Get RevenueHistory for chart
                 var revenueHistory = await _context.RevenueHistories
                     .Where(rh => rh.BrandId == brandId && rh.PeriodType == periodType)
                     .OrderBy(rh => rh.Date)
@@ -130,9 +146,9 @@ namespace HakiBaVuong.Controllers
                         "Year" => rh.YearlyRevenue,
                         _ => rh.DailyRevenue
                     },
-                    TotalCost = 0, // Tạm thời không tính TotalCost
-                    TotalProfit = 0, // Tạm thời không tính TotalProfit
-                    OrderCount = 0 // Có thể cập nhật nếu cần
+                    TotalCost = 0,
+                    TotalProfit = 0,
+                    OrderCount = 0
                 }).ToList();
 
                 _logger.LogInformation("Retrieved revenue data for brand {BrandId} with {OrderCount} orders", brandId, response.OrderCount);
@@ -164,15 +180,13 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Brand không tồn tại." });
             }
 
-            if (User.IsInRole("Staff") && brand.OwnerId != userId.Value)
+            var isBrandOwner = await IsBrandOwner(userId.Value);
+            var hasBrandManagerRole = await HasBrandManagerRole(userId.Value, brandId);
+
+            if (!isBrandOwner && !hasBrandManagerRole)
             {
-                var hasPermission = await _context.StaffPermissions
-                    .AnyAsync(sp => sp.StaffId == userId.Value);
-                if (!hasPermission)
-                {
-                    _logger.LogWarning("Staff user {UserId} does not have ManageOrders permission for brand {BrandId}", userId.Value, brandId);
-                    return Forbid();
-                }
+                _logger.LogWarning("User {UserId} does not have permission for brand {BrandId}", userId.Value, brandId);
+                return StatusCode(403, new { message = "Bạn không có quyền truy cập API này." });
             }
 
             try
@@ -181,7 +195,6 @@ namespace HakiBaVuong.Controllers
                 var currentMonth = new DateTime(today.Year, today.Month, 1);
                 var currentYear = new DateTime(today.Year, 1, 1);
 
-                // Reset Revenue if new period
                 var revenues = await _context.Revenues
                     .Include(r => r.Order)
                     .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
@@ -205,7 +218,6 @@ namespace HakiBaVuong.Controllers
                 }
                 await _context.SaveChangesAsync();
 
-                // Get aggregated revenue
                 var currentRevenue = await _context.Revenues
                     .Include(r => r.Order)
                     .Where(r => r.Order.BrandId == brandId && r.Order.Status == "Đã thanh toán")
@@ -219,7 +231,6 @@ namespace HakiBaVuong.Controllers
                     })
                     .FirstOrDefaultAsync();
 
-                // Get RevenueHistory for all periods
                 var revenueHistories = await _context.RevenueHistories
                     .Where(rh => rh.BrandId == brandId)
                     .OrderBy(rh => rh.Date)
@@ -276,15 +287,8 @@ namespace HakiBaVuong.Controllers
                 return StatusCode(500, new { message = "Lỗi khi lấy dữ liệu doanh thu. Vui lòng thử lại sau." });
             }
         }
-
-        private int? GetUserId()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            return int.TryParse(userIdClaim, out int userId) ? userId : null;
-        }
     }
 
-    // DTO mới để hỗ trợ cả ba kỳ
     public class RevenueAllPeriodsDTO
     {
         public int BrandId { get; set; }
