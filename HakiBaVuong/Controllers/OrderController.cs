@@ -113,7 +113,7 @@ namespace HakiBaVuong.Controllers
                     FullName = model.FullName,
                     Phone = model.Phone,
                     Address = model.Address,
-                    Status = model.PaymentMethod == "BankCard" ? "Đã thanh toán" : "Chưa thanh toán",
+                    Status = model.PaymentMethod == "BankCard" ? "Chờ thanh toán" : "Chưa thanh toán",
                     DeliveryStatus = "Đợi giao hàng",
                     TotalAmount = totalAmount,
                     Discount = model.Discount,
@@ -141,7 +141,7 @@ namespace HakiBaVuong.Controllers
                     OrderId = order.OrderId,
                     Amount = order.TotalAmount,
                     Method = model.PaymentMethod,
-                    Status = model.PaymentMethod == "BankCard" ? "Completed" : "Pending",
+                    Status = model.PaymentMethod == "BankCard" ? "Pending" : "Pending",
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -198,103 +198,106 @@ namespace HakiBaVuong.Controllers
                     throw new Exception($"Không tìm thấy khách hàng với ID {customerId}");
                 }
 
-                // Update Revenue ngay sau khi tạo đơn hàng, bất kể trạng thái
-                var currentDate = DateTime.UtcNow;
-                var existingRevenue = await _context.Revenues
-                    .FirstOrDefaultAsync(r => r.OrderId == order.OrderId);
-
-                if (existingRevenue == null)
+                // Update Revenue for non-BankCard payments or defer for BankCard
+                if (model.PaymentMethod != "BankCard")
                 {
-                    var revenue = new Revenue
+                    var currentDate = DateTime.UtcNow;
+                    var existingRevenue = await _context.Revenues
+                        .FirstOrDefaultAsync(r => r.OrderId == order.OrderId);
+
+                    if (existingRevenue == null)
                     {
-                        OrderId = order.OrderId,
-                        DailyRevenue = totalAmount,
-                        MonthlyRevenue = totalAmount,
-                        YearlyRevenue = totalAmount,
-                        Date = currentDate
-                    };
-                    _context.Revenues.Add(revenue);
-                    _logger.LogInformation("Added new Revenue for OrderId {OrderId} with totalAmount {TotalAmount}", order.OrderId, totalAmount);
-                }
-                else
-                {
-                    existingRevenue.DailyRevenue += totalAmount;
-                    existingRevenue.MonthlyRevenue += totalAmount;
-                    existingRevenue.YearlyRevenue += totalAmount;
-                    existingRevenue.Date = currentDate;
-                    _context.Revenues.Update(existingRevenue);
-                    _logger.LogInformation("Updated existing Revenue for OrderId {OrderId} with totalAmount {TotalAmount}", order.OrderId, totalAmount);
-                }
-
-                // Update RevenueHistory
-                var today = currentDate.Date;
-                var month = new DateTime(currentDate.Year, currentDate.Month, 1);
-                var year = new DateTime(currentDate.Year, 1, 1);
-
-                // Daily
-                var dailyHistory = await _context.RevenueHistories
-                    .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == today && rh.PeriodType == "Day");
-                if (dailyHistory == null)
-                {
-                    dailyHistory = new RevenueHistory
+                        var revenue = new Revenue
+                        {
+                            OrderId = order.OrderId,
+                            DailyRevenue = totalAmount,
+                            MonthlyRevenue = totalAmount,
+                            YearlyRevenue = totalAmount,
+                            Date = currentDate
+                        };
+                        _context.Revenues.Add(revenue);
+                        _logger.LogInformation("Added new Revenue for OrderId {OrderId} with totalAmount {TotalAmount}", order.OrderId, totalAmount);
+                    }
+                    else
                     {
-                        BrandId = model.BrandId,
-                        DailyRevenue = totalAmount,
-                        MonthlyRevenue = 0,
-                        YearlyRevenue = 0,
-                        Date = today,
-                        PeriodType = "Day"
-                    };
-                    _context.RevenueHistories.Add(dailyHistory);
-                }
-                else
-                {
-                    dailyHistory.DailyRevenue += totalAmount;
-                    _context.RevenueHistories.Update(dailyHistory);
-                }
+                        existingRevenue.DailyRevenue += totalAmount;
+                        existingRevenue.MonthlyRevenue += totalAmount;
+                        existingRevenue.YearlyRevenue += totalAmount;
+                        existingRevenue.Date = currentDate;
+                        _context.Revenues.Update(existingRevenue);
+                        _logger.LogInformation("Updated existing Revenue for OrderId {OrderId} with totalAmount {TotalAmount}", order.OrderId, totalAmount);
+                    }
 
-                // Monthly
-                var monthlyHistory = await _context.RevenueHistories
-                    .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == month && rh.PeriodType == "Month");
-                if (monthlyHistory == null)
-                {
-                    monthlyHistory = new RevenueHistory
-                    {
-                        BrandId = model.BrandId,
-                        DailyRevenue = 0,
-                        MonthlyRevenue = totalAmount,
-                        YearlyRevenue = 0,
-                        Date = month,
-                        PeriodType = "Month"
-                    };
-                    _context.RevenueHistories.Add(monthlyHistory);
-                }
-                else
-                {
-                    monthlyHistory.MonthlyRevenue += totalAmount;
-                    _context.RevenueHistories.Update(monthlyHistory);
-                }
+                    // Update RevenueHistory
+                    var today = currentDate.Date;
+                    var month = new DateTime(currentDate.Year, currentDate.Month, 1);
+                    var year = new DateTime(currentDate.Year, 1, 1);
 
-                // Yearly
-                var yearlyHistory = await _context.RevenueHistories
-                    .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == year && rh.PeriodType == "Year");
-                if (yearlyHistory == null)
-                {
-                    yearlyHistory = new RevenueHistory
+                    // Daily
+                    var dailyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == today && rh.PeriodType == "Day");
+                    if (dailyHistory == null)
                     {
-                        BrandId = model.BrandId,
-                        DailyRevenue = 0,
-                        MonthlyRevenue = 0,
-                        YearlyRevenue = totalAmount,
-                        Date = year,
-                        PeriodType = "Year"
-                    };
-                    _context.RevenueHistories.Add(yearlyHistory);
-                }
-                else
-                {
-                    yearlyHistory.YearlyRevenue += totalAmount;
-                    _context.RevenueHistories.Update(yearlyHistory);
+                        dailyHistory = new RevenueHistory
+                        {
+                            BrandId = model.BrandId,
+                            DailyRevenue = totalAmount,
+                            MonthlyRevenue = 0,
+                            YearlyRevenue = 0,
+                            Date = today,
+                            PeriodType = "Day"
+                        };
+                        _context.RevenueHistories.Add(dailyHistory);
+                    }
+                    else
+                    {
+                        dailyHistory.DailyRevenue += totalAmount;
+                        _context.RevenueHistories.Update(dailyHistory);
+                    }
+
+                    // Monthly
+                    var monthlyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == month && rh.PeriodType == "Month");
+                    if (monthlyHistory == null)
+                    {
+                        monthlyHistory = new RevenueHistory
+                        {
+                            BrandId = model.BrandId,
+                            DailyRevenue = 0,
+                            MonthlyRevenue = totalAmount,
+                            YearlyRevenue = 0,
+                            Date = month,
+                            PeriodType = "Month"
+                        };
+                        _context.RevenueHistories.Add(monthlyHistory);
+                    }
+                    else
+                    {
+                        monthlyHistory.MonthlyRevenue += totalAmount;
+                        _context.RevenueHistories.Update(monthlyHistory);
+                    }
+
+                    // Yearly
+                    var yearlyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == year && rh.PeriodType == "Year");
+                    if (yearlyHistory == null)
+                    {
+                        yearlyHistory = new RevenueHistory
+                        {
+                            BrandId = model.BrandId,
+                            DailyRevenue = 0,
+                            MonthlyRevenue = 0,
+                            YearlyRevenue = totalAmount,
+                            Date = year,
+                            PeriodType = "Year"
+                        };
+                        _context.RevenueHistories.Add(yearlyHistory);
+                    }
+                    else
+                    {
+                        yearlyHistory.YearlyRevenue += totalAmount;
+                        _context.RevenueHistories.Update(yearlyHistory);
+                    }
                 }
 
                 _context.CartItems.RemoveRange(cartItemsForBrand);
