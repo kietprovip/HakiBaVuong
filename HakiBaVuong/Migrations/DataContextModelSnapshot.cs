@@ -612,6 +612,26 @@ namespace HakiBaVuong.Migrations
                     b.ToTable("ViewedProducts");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.Wishlist", b =>
+                {
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("int")
+                        .HasColumnOrder(0);
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int")
+                        .HasColumnOrder(1);
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("CustomerId", "ProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("Wishlists");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.Brand", b =>
                 {
                     b.HasOne("HakiBaVuong.Models.User", "Owner")
@@ -841,6 +861,25 @@ namespace HakiBaVuong.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.Wishlist", b =>
+                {
+                    b.HasOne("HakiBaVuong.Models.Customer", "Customer")
+                        .WithMany("Wishlist")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HakiBaVuong.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.Brand", b =>
                 {
                     b.Navigation("Orders");
@@ -867,6 +906,8 @@ namespace HakiBaVuong.Migrations
                     b.Navigation("Orders");
 
                     b.Navigation("ViewedProducts");
+
+                    b.Navigation("Wishlist");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.Order", b =>

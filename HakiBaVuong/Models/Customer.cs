@@ -19,5 +19,6 @@ namespace HakiBaVuong.Models
         public bool IsEmailVerified { get; set; } = false;
         public virtual ICollection<Comment> Comments { get; set; } = new List<Comment>();
         public virtual ICollection<ViewedProduct> ViewedProducts { get; set; } = new List<ViewedProduct>();
+        public virtual ICollection<Wishlist> Wishlist { get; set; } = new List<Wishlist>();
     }
 }

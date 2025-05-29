@@ -24,6 +24,7 @@ namespace HakiBaVuong.Data
         public DbSet<ViewedProduct> ViewedProducts { get; set; }
         public DbSet<Revenue> Revenues { get; set; }
         public DbSet<RevenueHistory> RevenueHistories { get; set; }
+        public DbSet<Wishlist> Wishlists { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -155,6 +156,21 @@ namespace HakiBaVuong.Data
                 .HasOne(vp => vp.Product)
                 .WithMany()
                 .HasForeignKey(vp => vp.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Wishlist>()
+                .HasKey(w => new { w.CustomerId, w.ProductId });
+
+            modelBuilder.Entity<Wishlist>()
+                .HasOne(w => w.Customer)
+                .WithMany(c => c.Wishlist)
+                .HasForeignKey(w => w.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Wishlist>()
+                .HasOne(w => w.Product)
+                .WithMany()
+                .HasForeignKey(w => w.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Revenue>()
