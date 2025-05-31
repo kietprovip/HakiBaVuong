@@ -1,5 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HakiBaVuong.Models
 {
@@ -18,7 +18,7 @@ namespace HakiBaVuong.Models
         public int Quantity { get; set; }
 
         [Required]
-        public decimal Price { get; set; } // Giá tại thời điểm đặt hàng
+        public decimal Price { get; set; }
 
         [ForeignKey("OrderId")]
         public virtual Order Order { get; set; }

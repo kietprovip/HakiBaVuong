@@ -1,0 +1,825 @@
+﻿using HakiBaVuong.Data;
+using HakiBaVuong.DTOs;
+using HakiBaVuong.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using System.Threading.Tasks;
+
+namespace HakiBaVuong.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    [Authorize]
+    public class OrderController : ControllerBase
+    {
+        private readonly DataContext _context;
+        private readonly ILogger<OrderController> _logger;
+
+        public OrderController(DataContext context, ILogger<OrderController> logger)
+        {
+            _context = context;
+            _logger = logger;
+        }
+
+        [HttpPost("create")]
+        public async Task<ActionResult<OrderDTO>> CreateOrder([FromBody] CreateOrderDTO model)
+        {
+            _logger.LogInformation("CreateOrder called with paymentMethod {PaymentMethod}, fullName {FullName}, phone {Phone}, address {Address}, brandId {BrandId}, addressId {AddressId}, discount {Discount}",
+                model.PaymentMethod, model.FullName, model.Phone, model.Address, model.BrandId, model.AddressId, model.Discount);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            if (model.AddressId.HasValue)
+            {
+                var address = await _context.CustomerAddresses
+                    .FirstOrDefaultAsync(a => a.AddressId == model.AddressId.Value && a.CustomerId == customerId);
+                if (address == null)
+                {
+                    _logger.LogWarning("Address not found: {AddressId}", model.AddressId);
+                    return BadRequest(new { message = "Địa chỉ không tồn tại." });
+                }
+                model.FullName = address.FullName;
+                model.Phone = address.Phone;
+                model.Address = address.Address;
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(model.FullName) || string.IsNullOrWhiteSpace(model.Phone) || string.IsNullOrWhiteSpace(model.Address))
+                {
+                    _logger.LogWarning("Invalid input data: FullName, Phone, or Address is empty");
+                    return BadRequest(new { message = "Vui lòng điền đầy đủ thông tin thanh toán." });
+                }
+            }
+
+            var cart = await _context.Carts
+                .Include(c => c.Items)
+                .ThenInclude(i => i.Product)
+                .FirstOrDefaultAsync(c => c.CustomerId == customerId);
+
+            if (cart == null || !cart.Items.Any())
+            {
+                _logger.LogWarning("Cart is empty or not found for customer {CustomerId}", customerId);
+                return BadRequest(new { message = "Giỏ hàng trống hoặc không tồn tại." });
+            }
+
+            var cartItemsForBrand = cart.Items.Where(i => i.Product.BrandId == model.BrandId).ToList();
+            if (!cartItemsForBrand.Any())
+            {
+                _logger.LogWarning("No items found for brand {BrandId} in cart for customer {CustomerId}", model.BrandId, customerId);
+                return BadRequest(new { message = "Không có sản phẩm nào thuộc thương hiệu này trong giỏ hàng." });
+            }
+
+            var brand = await _context.Brands.FindAsync(model.BrandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", model.BrandId);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
+
+            foreach (var item in cartItemsForBrand)
+            {
+                var product = await _context.Products.FindAsync(item.ProductId);
+                if (product == null)
+                {
+                    _logger.LogWarning("Product not found: {ProductId}", item.ProductId);
+                    return BadRequest(new { message = $"Sản phẩm với ID {item.ProductId} không tồn tại." });
+                }
+
+                var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId);
+                if (inventory == null || inventory.StockQuantity < item.Quantity)
+                {
+                    _logger.LogWarning("Insufficient stock for product {ProductId}", item.ProductId);
+                    return BadRequest(new { message = $"Sản phẩm {item.Product.Name} không đủ tồn kho." });
+                }
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var subtotal = cartItemsForBrand.Sum(i => i.Quantity * i.Product.PriceSell);
+                var totalAmount = Math.Max(0, subtotal - model.Discount);
+
+                var order = new Order
+                {
+                    BrandId = model.BrandId,
+                    CustomerId = customerId,
+                    FullName = model.FullName,
+                    Phone = model.Phone,
+                    Address = model.Address,
+                    Status = model.PaymentMethod == "BankCard" ? "Chờ thanh toán" : "Chưa thanh toán",
+                    DeliveryStatus = "Đợi giao hàng",
+                    TotalAmount = totalAmount,
+                    Discount = model.Discount,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.Orders.Add(order);
+                await _context.SaveChangesAsync();
+
+                var orderItems = cartItemsForBrand.Select(i => new OrderItem
+                {
+                    OrderId = order.OrderId,
+                    ProductId = i.ProductId,
+                    ProductName = i.Product.Name,
+                    Quantity = i.Quantity,
+                    Price = i.Product.PriceSell
+                }).ToList();
+
+                _context.OrderItems.AddRange(orderItems);
+                await _context.SaveChangesAsync();
+
+                var payment = new Payment
+                {
+                    OrderId = order.OrderId,
+                    Amount = order.TotalAmount,
+                    Method = model.PaymentMethod,
+                    Status = model.PaymentMethod == "BankCard" ? "Pending" : "Pending",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Payments.Add(payment);
+                await _context.SaveChangesAsync();
+
+                order.PaymentId = payment.PaymentId;
+
+                foreach (var item in cartItemsForBrand)
+                {
+                    var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId);
+                    if (inventory == null)
+                    {
+                        _logger.LogWarning("Inventory not found for product {ProductId}", item.ProductId);
+                        throw new Exception($"Inventory not found for product {item.ProductId}");
+                    }
+                    inventory.StockQuantity -= item.Quantity;
+                    inventory.LastUpdated = DateTime.UtcNow;
+                    _context.Inventories.Update(inventory);
+                }
+
+                var customer = await _context.Customers.FindAsync(customerId);
+                if (customer != null)
+                {
+                    var discountOption = new[] { 0m, 15000m, 200000m, 3000000m };
+                    if (discountOption.Contains(model.Discount))
+                    {
+                        var pointsToDeduct = model.Discount switch
+                        {
+                            15000m => 100,
+                            200000m => 1000,
+                            3000000m => 10000,
+                            _ => 0
+                        };
+
+                        if (customer.LoyaltyPoints < pointsToDeduct)
+                        {
+                            throw new Exception("Không đủ điểm khuyến mãi để áp dụng giảm giá.");
+                        }
+
+                        customer.LoyaltyPoints -= pointsToDeduct;
+                        customer.LoyaltyPoints += 1;
+                        _context.Customers.Update(customer);
+                    }
+                    else
+                    {
+                        customer.LoyaltyPoints += 1;
+                        _context.Customers.Update(customer);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Customer not found for customerId {CustomerId}", customerId);
+                    throw new Exception($"Không tìm thấy khách hàng với ID {customerId}");
+                }
+
+
+                if (model.PaymentMethod != "BankCard")
+                {
+                    var currentDate = DateTime.UtcNow;
+                    var existingRevenue = await _context.Revenues
+                        .FirstOrDefaultAsync(r => r.OrderId == order.OrderId);
+
+                    if (existingRevenue == null)
+                    {
+                        var revenue = new Revenue
+                        {
+                            OrderId = order.OrderId,
+                            DailyRevenue = totalAmount,
+                            MonthlyRevenue = totalAmount,
+                            YearlyRevenue = totalAmount,
+                            Date = currentDate
+                        };
+                        _context.Revenues.Add(revenue);
+                        _logger.LogInformation("Added new Revenue for OrderId {OrderId} with totalAmount {TotalAmount}", order.OrderId, totalAmount);
+                    }
+                    else
+                    {
+                        existingRevenue.DailyRevenue += totalAmount;
+                        existingRevenue.MonthlyRevenue += totalAmount;
+                        existingRevenue.YearlyRevenue += totalAmount;
+                        existingRevenue.Date = currentDate;
+                        _context.Revenues.Update(existingRevenue);
+                        _logger.LogInformation("Updated existing Revenue for OrderId {OrderId} with totalAmount {TotalAmount}", order.OrderId, totalAmount);
+                    }
+
+
+                    var today = currentDate.Date;
+                    var month = new DateTime(currentDate.Year, currentDate.Month, 1);
+                    var year = new DateTime(currentDate.Year, 1, 1);
+
+
+                    var dailyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == today && rh.PeriodType == "Day");
+                    if (dailyHistory == null)
+                    {
+                        dailyHistory = new RevenueHistory
+                        {
+                            BrandId = model.BrandId,
+                            DailyRevenue = totalAmount,
+                            MonthlyRevenue = 0,
+                            YearlyRevenue = 0,
+                            Date = today,
+                            PeriodType = "Day"
+                        };
+                        _context.RevenueHistories.Add(dailyHistory);
+                    }
+                    else
+                    {
+                        dailyHistory.DailyRevenue += totalAmount;
+                        _context.RevenueHistories.Update(dailyHistory);
+                    }
+
+
+                    var monthlyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == month && rh.PeriodType == "Month");
+                    if (monthlyHistory == null)
+                    {
+                        monthlyHistory = new RevenueHistory
+                        {
+                            BrandId = model.BrandId,
+                            DailyRevenue = 0,
+                            MonthlyRevenue = totalAmount,
+                            YearlyRevenue = 0,
+                            Date = month,
+                            PeriodType = "Month"
+                        };
+                        _context.RevenueHistories.Add(monthlyHistory);
+                    }
+                    else
+                    {
+                        monthlyHistory.MonthlyRevenue += totalAmount;
+                        _context.RevenueHistories.Update(monthlyHistory);
+                    }
+
+  
+                    var yearlyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == year && rh.PeriodType == "Year");
+                    if (yearlyHistory == null)
+                    {
+                        yearlyHistory = new RevenueHistory
+                        {
+                            BrandId = model.BrandId,
+                            DailyRevenue = 0,
+                            MonthlyRevenue = 0,
+                            YearlyRevenue = totalAmount,
+                            Date = year,
+                            PeriodType = "Year"
+                        };
+                        _context.RevenueHistories.Add(yearlyHistory);
+                    }
+                    else
+                    {
+                        yearlyHistory.YearlyRevenue += totalAmount;
+                        _context.RevenueHistories.Update(yearlyHistory);
+                    }
+                }
+
+                _context.CartItems.RemoveRange(cartItemsForBrand);
+                await _context.SaveChangesAsync();
+
+                if (!cart.Items.Any())
+                {
+                    _context.Carts.Remove(cart);
+                    await _context.SaveChangesAsync();
+                }
+
+                await transaction.CommitAsync();
+
+                var orderDto = new OrderDTO
+                {
+                    OrderId = order.OrderId,
+                    BrandId = order.BrandId,
+                    CustomerId = order.CustomerId,
+                    FullName = order.FullName,
+                    Phone = order.Phone,
+                    Address = order.Address,
+                    Status = order.Status,
+                    DeliveryStatus = order.DeliveryStatus,
+                    EstimatedDeliveryDate = order.EstimatedDeliveryDate,
+                    TotalAmount = order.TotalAmount,
+                    Discount = order.Discount,
+                    CreatedAt = order.CreatedAt,
+                    OrderItems = orderItems.Select(i => new OrderItemDTO
+                    {
+                        ItemId = i.ItemId,
+                        OrderId = i.OrderId,
+                        ProductId = i.ProductId,
+                        ProductName = i.ProductName,
+                        Quantity = i.Quantity,
+                        Price = i.Price
+                    }).ToList(),
+                    Payment = new PaymentDTO
+                    {
+                        PaymentId = payment.PaymentId,
+                        Amount = payment.Amount,
+                        Method = payment.Method,
+                        Status = payment.Status
+                    }
+                };
+
+                _logger.LogInformation("Created order {OrderId} for customer {CustomerId} with LoyaltyPoints updated to {LoyaltyPoints}", order.OrderId, customerId, customer.LoyaltyPoints);
+                return CreatedAtAction(nameof(GetOrder), new { id = order.OrderId }, orderDto);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Failed to create order for customer {CustomerId}. Exception: {Exception}. InnerException: {InnerException}",
+                    customerId, ex.Message, ex.InnerException?.Message);
+                return StatusCode(500, new { message = "Lỗi khi tạo đơn hàng. Vui lòng thử lại. Chi tiết: " + ex.Message + (ex.InnerException != null ? " Nội dung chi tiết: " + ex.InnerException.Message : "") });
+            }
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<OrderDTO>> GetOrder(int id)
+        {
+            _logger.LogInformation("GetOrder called for order {OrderId}", id);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
+                .Include(o => o.Payment)
+                .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
+
+            if (order == null)
+            {
+                _logger.LogWarning("Order not found: {OrderId}", id);
+                return NotFound(new { message = "Đơn hàng không tồn tại." });
+            }
+
+            var orderDto = new OrderDTO
+            {
+                OrderId = order.OrderId,
+                BrandId = order.BrandId,
+                CustomerId = order.CustomerId,
+                FullName = order.FullName,
+                Phone = order.Phone,
+                Address = order.Address,
+                Status = order.Status,
+                DeliveryStatus = order.DeliveryStatus,
+                EstimatedDeliveryDate = order.EstimatedDeliveryDate,
+                TotalAmount = order.TotalAmount,
+                Discount = order.Discount,
+                CreatedAt = order.CreatedAt,
+                OrderItems = order.OrderItems.Select(i => new OrderItemDTO
+                {
+                    ItemId = i.ItemId,
+                    OrderId = i.OrderId,
+                    ProductId = i.ProductId,
+                    ProductName = i.ProductName,
+                    Quantity = i.Quantity,
+                    Price = i.Price
+                }).ToList(),
+                Payment = order.Payment != null ? new PaymentDTO
+                {
+                    PaymentId = order.Payment.PaymentId,
+                    Amount = order.Payment.Amount,
+                    Method = order.Payment.Method,
+                    Status = order.Payment.Status
+                } : null
+            };
+
+            _logger.LogInformation("Retrieved order {OrderId}", id);
+            return Ok(orderDto);
+        }
+
+        [HttpGet("brand/{brandId}")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<ActionResult<IEnumerable<OrderDTO>>> GetOrdersByBrand(int brandId)
+        {
+            _logger.LogInformation("GetOrdersByBrand called for brand {BrandId}", brandId);
+
+            var userId = GetUserId();
+            if (userId == null)
+            {
+                _logger.LogWarning("Invalid userId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var brand = await _context.Brands.FindAsync(brandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", brandId);
+                return BadRequest(new { message = "Brand không tồn tại." });
+            }
+
+            if (User.IsInRole("Staff") && brand.OwnerId != userId)
+            {
+                _logger.LogWarning("Staff user {UserId} does not have access to brand {BrandId}", userId, brandId);
+                return Forbid();
+            }
+
+            var orders = await _context.Orders
+                .Where(o => o.BrandId == brandId)
+                .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
+                .Include(o => o.Payment)
+                .ToListAsync();
+
+            var orderDtos = orders.Select(o => new OrderDTO
+            {
+                OrderId = o.OrderId,
+                BrandId = o.BrandId,
+                CustomerId = o.CustomerId,
+                FullName = o.FullName,
+                Phone = o.Phone,
+                Address = o.Address,
+                Status = o.Status,
+                DeliveryStatus = o.DeliveryStatus,
+                EstimatedDeliveryDate = o.EstimatedDeliveryDate,
+                TotalAmount = o.TotalAmount,
+                Discount = o.Discount,
+                CreatedAt = o.CreatedAt,
+                OrderItems = o.OrderItems.Select(i => new OrderItemDTO
+                {
+                    ItemId = i.ItemId,
+                    OrderId = i.OrderId,
+                    ProductId = i.ProductId,
+                    ProductName = i.ProductName,
+                    Quantity = i.Quantity,
+                    Price = i.Price
+                }).ToList(),
+                Payment = o.Payment != null ? new PaymentDTO
+                {
+                    PaymentId = o.Payment.PaymentId,
+                    Amount = o.Payment.Amount,
+                    Method = o.Payment.Method,
+                    Status = o.Payment.Status
+                } : null
+            }).ToList();
+
+            _logger.LogInformation("Retrieved {Count} orders for brand {BrandId}", orders.Count, brandId);
+            return Ok(orderDtos);
+        }
+
+        [HttpGet("customer")]
+        public async Task<ActionResult<IEnumerable<OrderDTO>>> GetCustomerOrders([FromQuery] FilterOrdersDTO filter)
+        {
+            _logger.LogInformation("GetCustomerOrders called");
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var query = _context.Orders
+                .Where(o => o.CustomerId == customerId)
+                .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
+                .Include(o => o.Payment)
+                .AsQueryable();
+
+            if (!string.IsNullOrEmpty(filter.Status))
+            {
+                query = query.Where(o => o.Status == filter.Status);
+            }
+
+            if (!string.IsNullOrEmpty(filter.DeliveryStatus))
+            {
+                query = query.Where(o => o.DeliveryStatus == filter.DeliveryStatus);
+            }
+
+            if (filter.StartDate.HasValue)
+            {
+                query = query.Where(o => o.CreatedAt >= filter.StartDate.Value);
+            }
+
+            if (filter.EndDate.HasValue)
+            {
+                query = query.Where(o => o.CreatedAt <= filter.EndDate.Value);
+            }
+
+            var orders = await query.ToListAsync();
+
+            var orderDtos = orders.Select(o => new OrderDTO
+            {
+                OrderId = o.OrderId,
+                BrandId = o.BrandId,
+                CustomerId = o.CustomerId,
+                FullName = o.FullName,
+                Phone = o.Phone,
+                Address = o.Address,
+                Status = o.Status,
+                DeliveryStatus = o.DeliveryStatus,
+                EstimatedDeliveryDate = o.EstimatedDeliveryDate,
+                TotalAmount = o.TotalAmount,
+                Discount = o.Discount,
+                CreatedAt = o.CreatedAt,
+                OrderItems = o.OrderItems.Select(i => new OrderItemDTO
+                {
+                    ItemId = i.ItemId,
+                    OrderId = i.OrderId,
+                    ProductId = i.ProductId,
+                    ProductName = i.ProductName,
+                    Quantity = i.Quantity,
+                    Price = i.Price
+                }).ToList(),
+                Payment = o.Payment != null ? new PaymentDTO
+                {
+                    PaymentId = o.Payment.PaymentId,
+                    Amount = o.Payment.Amount,
+                    Method = o.Payment.Method,
+                    Status = o.Payment.Status
+                } : null
+            }).ToList();
+
+            _logger.LogInformation("Retrieved {Count} orders for customer {CustomerId}", orders.Count, customerId);
+            return Ok(orderDtos);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateOrder(int id, [FromBody] UpdateOrderDTO model)
+        {
+            _logger.LogInformation("UpdateOrder called for order {OrderId}", id);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.Payment)
+                .Include(o => o.OrderItems)
+                .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
+
+            if (order == null)
+            {
+                _logger.LogWarning("Order not found: {OrderId}", id);
+                return NotFound(new { message = "Đơn hàng không tồn tại." });
+            }
+
+            if (order.Status != "Chưa thanh toán")
+            {
+                _logger.LogWarning("Order {OrderId} cannot be updated by customer, status: {Status}", id, order.Status);
+                return BadRequest(new { message = "Chỉ có thể cập nhật đơn hàng ở trạng thái Chưa thanh toán." });
+            }
+
+            var validStatuses = new[] { "Chưa thanh toán", "Đã thanh toán", "Huỷ đơn hàng" };
+            if (!string.IsNullOrEmpty(model.Status) && !validStatuses.Contains(model.Status))
+            {
+                _logger.LogWarning("Invalid status: {Status}", model.Status);
+                return BadRequest(new { message = "Trạng thái không hợp lệ." });
+            }
+
+            if (!string.IsNullOrEmpty(model.FullName)) order.FullName = model.FullName;
+            if (!string.IsNullOrEmpty(model.Phone)) order.Phone = model.Phone;
+            if (!string.IsNullOrEmpty(model.Address)) order.Address = model.Address;
+            if (!string.IsNullOrEmpty(model.Status))
+            {
+                order.Status = model.Status;
+                if (order.Payment != null && model.Status == "Huỷ đơn hàng")
+                {
+                    order.Payment.Status = "Cancelled";
+                }
+                else if (order.Payment != null && model.Status == "Đã thanh toán")
+                {
+                    order.Payment.Status = "Completed";
+
+                    var currentDate = DateTime.UtcNow;
+                    var existingRevenue = await _context.Revenues
+                        .FirstOrDefaultAsync(r => r.OrderId == order.OrderId);
+
+                    if (existingRevenue == null)
+                    {
+                        var revenue = new Revenue
+                        {
+                            OrderId = order.OrderId,
+                            DailyRevenue = order.TotalAmount,
+                            MonthlyRevenue = order.TotalAmount,
+                            YearlyRevenue = order.TotalAmount,
+                            Date = currentDate
+                        };
+                        _context.Revenues.Add(revenue);
+                    }
+                    else
+                    {
+                        existingRevenue.DailyRevenue += order.TotalAmount;
+                        existingRevenue.MonthlyRevenue += order.TotalAmount;
+                        existingRevenue.YearlyRevenue += order.TotalAmount;
+                        existingRevenue.Date = currentDate;
+                        _context.Revenues.Update(existingRevenue);
+                    }
+
+
+                    var today = currentDate.Date;
+                    var month = new DateTime(currentDate.Year, currentDate.Month, 1);
+                    var year = new DateTime(currentDate.Year, 1, 1);
+
+
+                    var dailyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == order.BrandId && rh.Date == today && rh.PeriodType == "Day");
+                    if (dailyHistory == null)
+                    {
+                        dailyHistory = new RevenueHistory
+                        {
+                            BrandId = order.BrandId,
+                            DailyRevenue = order.TotalAmount,
+                            MonthlyRevenue = 0,
+                            YearlyRevenue = 0,
+                            Date = today,
+                            PeriodType = "Day"
+                        };
+                        _context.RevenueHistories.Add(dailyHistory);
+                    }
+                    else
+                    {
+                        dailyHistory.DailyRevenue += order.TotalAmount;
+                        _context.RevenueHistories.Update(dailyHistory);
+                    }
+
+
+                    var monthlyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == order.BrandId && rh.Date == month && rh.PeriodType == "Month");
+                    if (monthlyHistory == null)
+                    {
+                        monthlyHistory = new RevenueHistory
+                        {
+                            BrandId = order.BrandId,
+                            DailyRevenue = 0,
+                            MonthlyRevenue = order.TotalAmount,
+                            YearlyRevenue = 0,
+                            Date = month,
+                            PeriodType = "Month"
+                        };
+                        _context.RevenueHistories.Add(monthlyHistory);
+                    }
+                    else
+                    {
+                        monthlyHistory.MonthlyRevenue += order.TotalAmount;
+                        _context.RevenueHistories.Update(monthlyHistory);
+                    }
+
+
+                    var yearlyHistory = await _context.RevenueHistories
+                        .FirstOrDefaultAsync(rh => rh.BrandId == order.BrandId && rh.Date == year && rh.PeriodType == "Year");
+                    if (yearlyHistory == null)
+                    {
+                        yearlyHistory = new RevenueHistory
+                        {
+                            BrandId = order.BrandId,
+                            DailyRevenue = 0,
+                            MonthlyRevenue = 0,
+                            YearlyRevenue = order.TotalAmount,
+                            Date = year,
+                            PeriodType = "Year"
+                        };
+                        _context.RevenueHistories.Add(yearlyHistory);
+                    }
+                    else
+                    {
+                        yearlyHistory.YearlyRevenue += order.TotalAmount;
+                        _context.RevenueHistories.Update(yearlyHistory);
+                    }
+                }
+            }
+
+            order.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            var orderDto = new OrderDTO
+            {
+                OrderId = order.OrderId,
+                BrandId = order.BrandId,
+                CustomerId = order.CustomerId,
+                FullName = order.FullName,
+                Phone = order.Phone,
+                Address = order.Address,
+                Status = order.Status,
+                DeliveryStatus = order.DeliveryStatus,
+                EstimatedDeliveryDate = order.EstimatedDeliveryDate,
+                TotalAmount = order.TotalAmount,
+                Discount = order.Discount,
+                CreatedAt = order.CreatedAt,
+                OrderItems = order.OrderItems.Select(i => new OrderItemDTO
+                {
+                    ItemId = i.ItemId,
+                    OrderId = i.OrderId,
+                    ProductId = i.ProductId,
+                    ProductName = i.ProductName,
+                    Quantity = i.Quantity,
+                    Price = i.Price
+                }).ToList(),
+                Payment = order.Payment != null ? new PaymentDTO
+                {
+                    PaymentId = order.Payment.PaymentId,
+                    Amount = order.Payment.Amount,
+                    Method = order.Payment.Method,
+                    Status = order.Payment.Status
+                } : null
+            };
+
+            _logger.LogInformation("Updated order {OrderId} by customer {CustomerId}", id, customerId);
+            return Ok(orderDto);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteOrder(int id)
+        {
+            _logger.LogInformation("DeleteOrder called for order {OrderId}", id);
+
+            var customerId = GetCustomerId();
+            if (customerId == null)
+            {
+                _logger.LogWarning("Invalid customerId from token");
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                .Include(o => o.Payment)
+                .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
+
+            if (order == null)
+            {
+                _logger.LogWarning("Order not found: {OrderId}", id);
+                return NotFound(new { message = "Đơn hàng không tồn tại." });
+            }
+
+            if (order.Status != "Chưa thanh toán")
+            {
+                _logger.LogWarning("Order {OrderId} cannot be deleted, status: {Status}", id, order.Status);
+                return BadRequest(new { message = "Chỉ có thể xóa đơn hàng ở trạng thái Chưa thanh toán." });
+            }
+
+            foreach (var item in order.OrderItems)
+            {
+                if (item.ProductId.HasValue)
+                {
+                    var inventory = await _context.Inventories.FirstOrDefaultAsync(i => i.ProductId == item.ProductId.Value);
+                    if (inventory != null)
+                    {
+                        inventory.StockQuantity += item.Quantity;
+                        inventory.LastUpdated = DateTime.UtcNow;
+                        _context.Inventories.Update(inventory);
+                    }
+                }
+            }
+
+            if (order.Payment != null)
+            {
+                _context.Payments.Remove(order.Payment);
+            }
+
+            // Remove related Revenue
+            var revenue = await _context.Revenues.FirstOrDefaultAsync(r => r.OrderId == id);
+            if (revenue != null)
+            {
+                _context.Revenues.Remove(revenue);
+            }
+
+            _context.Orders.Remove(order);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Deleted order {OrderId} by customer {CustomerId}", id, customerId);
+            return Ok(new { message = "Xóa đơn hàng thành công." });
+        }
+
+        private int? GetCustomerId()
+        {
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(customerIdClaim, out int customerId) ? customerId : null;
+        }
+
+        private int? GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(userIdClaim, out int userId) ? userId : null;
+        }
+    }
+}

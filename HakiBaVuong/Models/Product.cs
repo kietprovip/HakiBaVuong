@@ -19,11 +19,13 @@ namespace HakiBaVuong.Models
         public decimal PriceSell { get; set; }
 
         public decimal? PriceCost { get; set; }
-
+        public float Rating { get; set; } = 5.0f;
+        public string Image { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
         [ForeignKey("BrandId")]
         public virtual Brand Brand { get; set; }
+        public virtual ICollection<ProductCategory> ProductCategories { get; set; } = new List<ProductCategory>();
     }
 }
