@@ -8,7 +8,7 @@
         public string Content { get; set; }
         public int Rating { get; set; }
         public DateTime CreatedAt { get; set; }
-        public string ProductName { get; set; } // Added for mapping
+        public string ProductName { get; set; }
         public string CustomerName { get; set; }
     }
 }

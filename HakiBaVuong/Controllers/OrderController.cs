@@ -198,7 +198,7 @@ namespace HakiBaVuong.Controllers
                     throw new Exception($"Không tìm thấy khách hàng với ID {customerId}");
                 }
 
-                // Update Revenue for non-BankCard payments or defer for BankCard
+
                 if (model.PaymentMethod != "BankCard")
                 {
                     var currentDate = DateTime.UtcNow;
@@ -228,12 +228,12 @@ namespace HakiBaVuong.Controllers
                         _logger.LogInformation("Updated existing Revenue for OrderId {OrderId} with totalAmount {TotalAmount}", order.OrderId, totalAmount);
                     }
 
-                    // Update RevenueHistory
+
                     var today = currentDate.Date;
                     var month = new DateTime(currentDate.Year, currentDate.Month, 1);
                     var year = new DateTime(currentDate.Year, 1, 1);
 
-                    // Daily
+
                     var dailyHistory = await _context.RevenueHistories
                         .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == today && rh.PeriodType == "Day");
                     if (dailyHistory == null)
@@ -255,7 +255,7 @@ namespace HakiBaVuong.Controllers
                         _context.RevenueHistories.Update(dailyHistory);
                     }
 
-                    // Monthly
+
                     var monthlyHistory = await _context.RevenueHistories
                         .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == month && rh.PeriodType == "Month");
                     if (monthlyHistory == null)
@@ -277,7 +277,7 @@ namespace HakiBaVuong.Controllers
                         _context.RevenueHistories.Update(monthlyHistory);
                     }
 
-                    // Yearly
+  
                     var yearlyHistory = await _context.RevenueHistories
                         .FirstOrDefaultAsync(rh => rh.BrandId == model.BrandId && rh.Date == year && rh.PeriodType == "Year");
                     if (yearlyHistory == null)
@@ -610,7 +610,7 @@ namespace HakiBaVuong.Controllers
                 else if (order.Payment != null && model.Status == "Đã thanh toán")
                 {
                     order.Payment.Status = "Completed";
-                    // Update Revenue when status changes to "Đã thanh toán"
+
                     var currentDate = DateTime.UtcNow;
                     var existingRevenue = await _context.Revenues
                         .FirstOrDefaultAsync(r => r.OrderId == order.OrderId);
@@ -636,12 +636,12 @@ namespace HakiBaVuong.Controllers
                         _context.Revenues.Update(existingRevenue);
                     }
 
-                    // Update RevenueHistory
+
                     var today = currentDate.Date;
                     var month = new DateTime(currentDate.Year, currentDate.Month, 1);
                     var year = new DateTime(currentDate.Year, 1, 1);
 
-                    // Daily
+
                     var dailyHistory = await _context.RevenueHistories
                         .FirstOrDefaultAsync(rh => rh.BrandId == order.BrandId && rh.Date == today && rh.PeriodType == "Day");
                     if (dailyHistory == null)
@@ -663,7 +663,7 @@ namespace HakiBaVuong.Controllers
                         _context.RevenueHistories.Update(dailyHistory);
                     }
 
-                    // Monthly
+
                     var monthlyHistory = await _context.RevenueHistories
                         .FirstOrDefaultAsync(rh => rh.BrandId == order.BrandId && rh.Date == month && rh.PeriodType == "Month");
                     if (monthlyHistory == null)
@@ -685,7 +685,7 @@ namespace HakiBaVuong.Controllers
                         _context.RevenueHistories.Update(monthlyHistory);
                     }
 
-                    // Yearly
+
                     var yearlyHistory = await _context.RevenueHistories
                         .FirstOrDefaultAsync(rh => rh.BrandId == order.BrandId && rh.Date == year && rh.PeriodType == "Year");
                     if (yearlyHistory == null)

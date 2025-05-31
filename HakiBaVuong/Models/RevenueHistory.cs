@@ -15,7 +15,7 @@ namespace HakiBaVuong.Models
         public decimal YearlyRevenue { get; set; }
 
         public DateTime Date { get; set; }
-        public string PeriodType { get; set; } // "Day", "Month", "Year"
+        public string PeriodType { get; set; } 
 
         [ForeignKey("BrandId")]
         public virtual Brand Brand { get; set; }

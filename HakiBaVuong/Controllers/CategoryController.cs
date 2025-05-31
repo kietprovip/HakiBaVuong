@@ -23,7 +23,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Admin,Staff,InventoryManager")] // Cho phép cả Admin và Staff
+        [Authorize(Roles = "Admin,Staff,InventoryManager")] 
         public async Task<ActionResult<IEnumerable<CategoryDTO>>> GetAll()
         {
             _logger.LogInformation("GetAll categories called");
@@ -42,7 +42,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Staff")] // Cho phép cả Admin và Staff
+        [Authorize(Roles = "Admin,Staff")] 
         public async Task<ActionResult<CategoryDTO>> GetById(int id)
         {
             _logger.LogInformation("GetById called for category ID: {Id}", id);
@@ -66,7 +66,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin")] // Chỉ Admin được tạo mới
+        [Authorize(Roles = "Admin")] 
         public async Task<ActionResult<CategoryDTO>> Create([FromBody] CategoryDTO categoryDto)
         {
             _logger.LogInformation("Create category called with name: {Name}", categoryDto.Name);
@@ -91,7 +91,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "Admin")] // Chỉ Admin được cập nhật
+        [Authorize(Roles = "Admin")] 
         public async Task<IActionResult> Update(int id, [FromBody] CategoryDTO categoryDto)
         {
             _logger.LogInformation("Update category called for ID: {Id}", id);
@@ -120,7 +120,7 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin")] // Chỉ Admin được xóa
+        [Authorize(Roles = "Admin")] 
         public async Task<IActionResult> Delete(int id)
         {
             _logger.LogInformation("Delete category called for ID: {Id}", id);
