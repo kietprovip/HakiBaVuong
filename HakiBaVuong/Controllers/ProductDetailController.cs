@@ -148,5 +148,43 @@ namespace HakiBaVuong.Controllers
             _logger.LogInformation("Comment created for product {ProductId} by customer {CustomerId}", id, customerId);
             return CreatedAtAction(nameof(GetProductComments), new { id = comment.ProductId }, commentDto);
         }
+
+        [HttpGet("brand-related/{brandId}")]
+        public async Task<ActionResult<IEnumerable<ProductDTO>>> GetBrandRelatedProducts(int brandId)
+        {
+            _logger.LogInformation("GetBrandRelatedProducts called for brand ID: {BrandId}", brandId);
+
+            var brand = await _context.Brands.FindAsync(brandId);
+            if (brand == null)
+            {
+                _logger.LogWarning("Brand not found: {BrandId}", brandId);
+                return NotFound(new { message = "Thương hiệu không tồn tại." });
+            }
+
+            var relatedProducts = await _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.ProductCategories)
+                .Where(p => p.BrandId == brandId)
+                .OrderByDescending(p => p.Rating)
+                .Take(4)
+                .Select(p => new ProductDTO
+                {
+                    ProductId = p.ProductId,
+                    BrandId = p.BrandId,
+                    Name = p.Name,
+                    Description = p.Description,
+                    PriceSell = p.PriceSell,
+                    PriceCost = p.PriceCost,
+                    Rating = p.Rating,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    Image = p.Image,
+                    CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                })
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} related products for brand ID: {BrandId}", relatedProducts.Count, brandId);
+            return Ok(relatedProducts);
+        }
     }
 }

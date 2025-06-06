@@ -879,7 +879,6 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("home")]
-        [Authorize]
         public async Task<ActionResult<IEnumerable<ProductDTO>>> GetHomeRecommendations()
         {
             _logger.LogInformation("GetHomeRecommendations called");
@@ -887,25 +886,14 @@ namespace HakiBaVuong.Controllers
             var customerId = GetCustomerId();
             if (customerId == null)
             {
-                _logger.LogWarning("Invalid customerId from token");
-                return Unauthorized(new { message = "Token không hợp lệ." });
-            }
+                _logger.LogInformation("No customerId provided, returning popular products");
 
-            var viewedProducts = await _context.ViewedProducts
-                .Where(vp => vp.CustomerId == customerId)
-                .Select(vp => vp.ProductId)
-                .ToListAsync();
-
-            var query = _context.Products
-                .Include(p => p.Brand)
-                .Include(p => p.ProductCategories)
-                .ThenInclude(pc => pc.Category)
-                .AsQueryable();
-
-            var recommendedByViewed = viewedProducts.Any()
-                ? await query.Where(p => viewedProducts.Contains(p.ProductId))
+                var popularProducts = await _context.Products
+                    .Include(p => p.Brand)
+                    .Include(p => p.ProductCategories)
+                    .ThenInclude(pc => pc.Category)
                     .OrderByDescending(p => p.Rating)
-                    .Take(3)
+                    .Take(9)
                     .Select(p => new ProductDTO
                     {
                         ProductId = p.ProductId,
@@ -920,26 +908,29 @@ namespace HakiBaVuong.Controllers
                         Image = p.Image,
                         CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                     })
-                    .ToListAsync()
-                : new List<ProductDTO>();
+                    .ToListAsync();
 
-            var viewedProductsWithCategories = await _context.ViewedProducts
+                _logger.LogInformation("Retrieved {Count} popular products", popularProducts.Count);
+                return Ok(popularProducts);
+            }
+
+            var viewedProducts = await _context.ViewedProducts
                 .Where(vp => vp.CustomerId == customerId)
                 .Include(vp => vp.Product)
                 .ThenInclude(p => p.ProductCategories)
                 .ThenInclude(pc => pc.Category)
                 .ToListAsync();
 
-            var viewedCategories = viewedProductsWithCategories
-                .SelectMany(vp => vp.Product.ProductCategories)
-                .Select(pc => pc.CategoryId)
-                .Distinct()
-                .ToList();
+            if (!viewedProducts.Any())
+            {
+                _logger.LogInformation("No viewed products found for customer {CustomerId}, returning popular products", customerId);
 
-            var recommendedByCategory = viewedCategories.Any()
-                ? await query.Where(p => p.ProductCategories.Any(pc => viewedCategories.Contains(pc.CategoryId)) && !viewedProducts.Contains(p.ProductId))
+                var popularProducts = await _context.Products
+                    .Include(p => p.Brand)
+                    .Include(p => p.ProductCategories)
+                    .ThenInclude(pc => pc.Category)
                     .OrderByDescending(p => p.Rating)
-                    .Take(3)
+                    .Take(9)
                     .Select(p => new ProductDTO
                     {
                         ProductId = p.ProductId,
@@ -954,46 +945,40 @@ namespace HakiBaVuong.Controllers
                         Image = p.Image,
                         CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                     })
-                    .ToListAsync()
-                : new List<ProductDTO>();
+                    .ToListAsync();
 
-            var viewedBrands = await _context.ViewedProducts
-                .Where(vp => vp.CustomerId == customerId)
-                .Include(vp => vp.Product)
-                .Select(vp => vp.Product.BrandId)
-                .Distinct()
+                _logger.LogInformation("Retrieved {Count} popular products", popularProducts.Count);
+                return Ok(popularProducts);
+            }
+
+            var randomViewedProduct = viewedProducts.OrderBy(x => Guid.NewGuid()).First();
+            var categoryIds = randomViewedProduct.Product.ProductCategories.Select(pc => pc.CategoryId).ToList();
+
+            var recommendedProducts = await _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .Where(p => p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)))
+                .OrderByDescending(p => p.Rating)
+                .Take(9)
+                .Select(p => new ProductDTO
+                {
+                    ProductId = p.ProductId,
+                    BrandId = p.BrandId,
+                    Name = p.Name,
+                    Description = p.Description,
+                    PriceSell = p.PriceSell,
+                    PriceCost = p.PriceCost,
+                    Rating = p.Rating,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    Image = p.Image,
+                    CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                })
                 .ToListAsync();
 
-            var recommendedByBrand = viewedBrands.Any()
-                ? await query.Where(p => viewedBrands.Contains(p.BrandId) && !viewedProducts.Contains(p.ProductId))
-                    .OrderByDescending(p => p.Rating)
-                    .Take(3)
-                    .Select(p => new ProductDTO
-                    {
-                        ProductId = p.ProductId,
-                        BrandId = p.BrandId,
-                        Name = p.Name,
-                        Description = p.Description,
-                        PriceSell = p.PriceSell,
-                        PriceCost = p.PriceCost,
-                        Rating = p.Rating,
-                        CreatedAt = p.CreatedAt,
-                        UpdatedAt = p.UpdatedAt,
-                        Image = p.Image,
-                        CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
-                    })
-                    .ToListAsync()
-                : new List<ProductDTO>();
-
-            var allRecommendations = recommendedByViewed
-                .Concat(recommendedByCategory)
-                .Concat(recommendedByBrand)
-                .DistinctBy(p => p.ProductId)
-                .Take(9)
-                .ToList();
-
-            _logger.LogInformation("Retrieved {Count} home recommendations for customer {CustomerId}", allRecommendations.Count, customerId);
-            return Ok(allRecommendations);
+            _logger.LogInformation("Retrieved {Count} recommended products for customer {CustomerId} based on viewed product categories", recommendedProducts.Count, customerId);
+            return Ok(recommendedProducts);
         }
 
         [HttpPost("{productId}/view")]

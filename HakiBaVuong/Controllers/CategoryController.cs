@@ -138,5 +138,26 @@ namespace HakiBaVuong.Controllers
             _logger.LogInformation("Deleted category ID: {Id}", id);
             return NoContent();
         }
+
+        [HttpGet("random-categories")]
+        [Authorize(Roles = "Admin,Staff,InventoryManager")]
+        public async Task<ActionResult<IEnumerable<CategoryDTO>>> GetRandomCategories(int count = 4)
+        {
+            _logger.LogInformation("GetRandomCategories called with count: {Count}", count);
+
+            var categories = await _context.Categories
+                .OrderBy(c => Guid.NewGuid()) // Randomize order
+                .Take(count)
+                .Select(c => new CategoryDTO
+                {
+                    CategoryId = c.CategoryId,
+                    Name = c.Name,
+                    Description = c.Description
+                })
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} random categories", categories.Count);
+            return Ok(categories);
+        }
     }
 }
