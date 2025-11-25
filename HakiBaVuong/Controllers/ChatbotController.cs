@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using HakiBaVuong.Data;
 using HakiBaVuong.Models;
 
@@ -24,24 +25,23 @@ namespace HakiBaVuong.Controllers
 
             var gemini = config.GetSection("Gemini");
             var apiKey = gemini["ApiKey"] ?? throw new InvalidOperationException("Thiếu Gemini:ApiKey trong appsettings.json");
-            var model = gemini["Model"] ?? "gemini-2.0-flash-exp";
+            var model = gemini["Model"] ?? "gemini-2.0-flash-exp"; // Model mới nhất, hỗ trợ ảnh
             var baseUrl = gemini["BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1/models/";
             var endpoint = gemini["Endpoint"] ?? ":generateContent";
 
             _geminiUrl = $"{baseUrl}{model}{endpoint}?key={apiKey}";
-            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(40) };
         }
 
         [HttpPost("ask")]
         public async Task<IActionResult> Ask([FromBody] ChatRequest request)
         {
-            if (string.IsNullOrWhiteSpace(request?.Question))
+            if (string.IsNullOrWhiteSpace(request?.Question) && (request?.ImageUrls == null || !request.ImageUrls.Any()))
                 return BadRequest("Hỏi gì đi nè bạn ơi!");
 
-            var question = request.Question.Trim();
+            var question = request.Question?.Trim() ?? "Mô tả sản phẩm trong ảnh giúp mình nhé";
             var userKey = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
 
-  
             var customerIdClaim = User.FindFirst("CustomerId")?.Value;
             int? customerId = int.TryParse(customerIdClaim, out var cid) ? cid : null;
 
@@ -51,7 +51,7 @@ namespace HakiBaVuong.Controllers
 
             var history = GetHistory(userKey);
             var context = await BuildContext(question, customerId);
-            var answer = await CallGemini(question, history, context);
+            var answer = await CallGemini(question, history, context, request.ImageUrls);
 
             history.Add(new ChatMessage { Question = question, Answer = answer });
             if (history.Count > 15) history.RemoveAt(0);
@@ -62,7 +62,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { answer, fromCache = false });
         }
 
-        private async Task<string> CallGemini(string question, List<ChatMessage> history, string dbContext)
+        private async Task<string> CallGemini(string question, List<ChatMessage> history, string dbContext, List<string>? imageUrls = null)
         {
             var historyText = history.Any()
                 ? "Lịch sử chat gần đây:\n" + string.Join("\n", history.TakeLast(8).Select(h => $"Khách: {h.Question}\nBot: {h.Answer}"))
@@ -70,7 +70,7 @@ namespace HakiBaVuong.Controllers
 
             var prompt = $$"""
                 Bạn là trợ lý bán hàng siêu dễ thương, nhiệt tình của shop HakiBaVuong
-                Trả lời bằng tiếng Việt, giọng trẻ trung, gần gũi, hay dùng emoji
+                Trả lời bằng tiếng Việt, giọng trẻ trung, gần gũi, KHÔNG dùng emoji, không dùng icon
                 {{historyText}}
 
                 Dữ liệu cửa hàng hiện tại (dùng để gợi ý chính xác):
@@ -78,18 +78,40 @@ namespace HakiBaVuong.Controllers
 
                 Câu hỏi mới nhất của khách: {{question}}
 
-                Hãy trả lời tự nhiên, hấp dẫn, ngắn gọn, không icon, không emoji. 
-                Nếu khách hỏi sản phẩm thì gợi ý cụ thể tên + giá + lý do.
+                Hãy trả lời tự nhiên, ngắn gọn, hấp dẫn,  KHÔNG dùng emoji, không dùng icon.
+                Nếu khách gửi ảnh sản phẩm thì mô tả chính xác và gợi ý hàng đang bán.
                 Nếu đã nói rồi thì thêm "Như mình có nói lúc nãy..." cho thân thiện.
-                Nếu không có thông tin thì nói thật "Mình chưa có thông tin này ạ" chứ không bịa đặt!
+                Nếu không biết thì nói thật "Mình chưa có thông tin này ạ" chứ không bịa đặt!
                 """;
+
+            var parts = new List<object> { new { text = prompt } };
+
+
+            if (imageUrls != null && imageUrls.Any())
+            {
+                foreach (var url in imageUrls.Take(3)) 
+                {
+                    var imageBytes = await DownloadImageAsync(url);
+                    if (imageBytes != null)
+                    {
+                        parts.Add(new
+                        {
+                            inline_data = new
+                            {
+                                mime_type = GetMimeType(url),
+                                data = Convert.ToBase64String(imageBytes)
+                            }
+                        });
+                    }
+                }
+            }
 
             var requestBody = new
             {
-                contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } },
+                contents = new[] { new { role = "user", parts } },
                 generationConfig = new
                 {
-                    temperature = 0.9,
+                    temperature = 0.85,
                     topK = 40,
                     topP = 0.95,
                     maxOutputTokens = 1024
@@ -98,9 +120,12 @@ namespace HakiBaVuong.Controllers
 
             try
             {
-                var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
+                {
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                });
 
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
                 var response = await _httpClient.PostAsync(_geminiUrl, content);
                 var responseText = await response.Content.ReadAsStringAsync();
 
@@ -116,13 +141,33 @@ namespace HakiBaVuong.Controllers
                     .GetString();
 
                 return string.IsNullOrWhiteSpace(text)
-                    ? "Mình đang hơi lag, bạn hỏi lại giúp mình nha!"
+                    ? "Mình đang xử lý ảnh một chút, bạn đợi mình xíu nha!"
                     : text.Trim();
+            }
+            catch (Exception ex)
+            {
+
+                return "Oops! Bot đang lỗi nhẹ, bạn thử lại sau 5 giây nha!";
+            }
+        }
+
+        private async Task<byte[]?> DownloadImageAsync(string url)
+        {
+            try
+            {
+                return await _httpClient.GetByteArrayAsync(url);
             }
             catch
             {
-                return "Oops! Bot đang lỗi nhẹ, bạn thử lại sau 5 giây nha!";
+                return null;
             }
+        }
+
+        private string GetMimeType(string url)
+        {
+            return url.Contains(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" :
+                   url.Contains(".webp", StringComparison.OrdinalIgnoreCase) ? "image/webp" :
+                   "image/jpeg";
         }
 
         private async Task<string> BuildContext(string question, int? customerId = null)
@@ -132,20 +177,14 @@ namespace HakiBaVuong.Controllers
 
             try
             {
-
                 var brands = await _db.Brands.Select(b => b.Name).ToListAsync();
                 if (brands.Any())
                     sb.AppendLine("THƯƠNG HIỆU: " + string.Join(", ", brands));
 
-
                 var topSelling = await _db.OrderItems
-                    .Where(oi => oi.ProductId.HasValue)
-                    .GroupBy(oi => new { oi.ProductId, oi.ProductName })
-                    .Select(g => new
-                    {
-                        Name = g.Key.ProductName,
-                        TotalSold = g.Sum(x => x.Quantity)
-                    })
+                    .Where(oi => oi.ProductId.HasValue && oi.ProductName != null)
+                    .GroupBy(oi => oi.ProductName!)
+                    .Select(g => new { Name = g.Key, TotalSold = g.Sum(x => x.Quantity) })
                     .OrderByDescending(x => x.TotalSold)
                     .Take(10)
                     .ToListAsync();
@@ -157,13 +196,12 @@ namespace HakiBaVuong.Controllers
                         sb.AppendLine($"• {p.Name} (đã bán {p.TotalSold} cái)");
                 }
 
-
                 if (customerId.HasValue)
                 {
                     var customerBrands = await _db.Orders
                         .Where(o => o.CustomerId == customerId.Value)
                         .SelectMany(o => o.OrderItems)
-                        .Where(oi => oi.Product != null && oi.Product.Brand != null)
+                        .Where(oi => oi.Product.Brand.Name != null)
                         .GroupBy(oi => oi.Product!.Brand!.Name)
                         .Select(g => new { Brand = g.Key, Count = g.Count() })
                         .OrderByDescending(x => x.Count)
@@ -178,7 +216,6 @@ namespace HakiBaVuong.Controllers
                     }
                 }
 
- 
                 var products = await _db.Products
                     .Include(p => p.Brand)
                     .Include(p => p.ProductCategories).ThenInclude(pc => pc.Category)
@@ -214,7 +251,7 @@ namespace HakiBaVuong.Controllers
             }
             catch
             {
-                sb.AppendLine("Dữ liệu đang được cập nhật, bạn hỏi mình thêm nha!");
+                sb.AppendLine("Dữ liệu đang được cập nhật...");
             }
 
             return sb.ToString();
@@ -227,6 +264,7 @@ namespace HakiBaVuong.Controllers
     public class ChatRequest
     {
         public string Question { get; set; } = "";
+        public List<string>? ImageUrls { get; set; } 
     }
 
     public class ChatMessage
