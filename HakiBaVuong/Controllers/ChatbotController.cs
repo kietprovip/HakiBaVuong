@@ -36,7 +36,9 @@ namespace HakiBaVuong.Controllers
         [HttpPost("ask")]
         public async Task<IActionResult> Ask([FromBody] ChatRequest request)
         {
-            if (string.IsNullOrWhiteSpace(request?.Question) && (request?.ImageUrls == null || !request.ImageUrls.Any()))
+            if (string.IsNullOrWhiteSpace(request?.Question) && 
+                (request?.ImageUrls == null || !request.ImageUrls.Any()) &&
+                (request?.Base64Images == null || !request.Base64Images.Any()))
                 return BadRequest("Hỏi gì đi nè bạn ơi!");
 
             var question = request.Question?.Trim() ?? "Mô tả sản phẩm trong ảnh giúp mình nhé";
@@ -51,7 +53,7 @@ namespace HakiBaVuong.Controllers
 
             var history = GetHistory(userKey);
             var context = await BuildContext(question, customerId);
-            var answer = await CallGemini(question, history, context, request.ImageUrls);
+            var answer = await CallGemini(question, history, context, request.ImageUrls, request.Base64Images);
 
             history.Add(new ChatMessage { Question = question, Answer = answer });
             if (history.Count > 15) history.RemoveAt(0);
@@ -62,7 +64,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { answer, fromCache = false });
         }
 
-        private async Task<string> CallGemini(string question, List<ChatMessage> history, string dbContext, List<string>? imageUrls = null)
+        private async Task<string> CallGemini(string question, List<ChatMessage> history, string dbContext, List<string>? imageUrls = null, List<string>? base64Images = null)
         {
             var historyText = history.Any()
                 ? "Lịch sử chat gần đây:\n" + string.Join("\n", history.TakeLast(8).Select(h => $"Khách: {h.Question}\nBot: {h.Answer}"))
@@ -86,20 +88,79 @@ namespace HakiBaVuong.Controllers
 
             var parts = new List<object> { new { text = prompt } };
 
-
+            // Xử lý URL images (tải từ internet)
             if (imageUrls != null && imageUrls.Any())
             {
                 foreach (var url in imageUrls.Take(3)) 
                 {
-                    var imageBytes = await DownloadImageAsync(url);
-                    if (imageBytes != null)
+                    // Kiểm tra nếu là Data URI (base64 dạng URL)
+                    if (url.StartsWith("data:"))
                     {
+                        var (mimeType, base64Data) = ExtractBase64FromDataUri(url);
+                        if (!string.IsNullOrEmpty(base64Data))
+                        {
+                            parts.Add(new
+                            {
+                                inline_data = new
+                                {
+                                    mime_type = mimeType,
+                                    data = base64Data
+                                }
+                            });
+                        }
+                    }
+                    else
+                    {
+                        // URL thông thường - tải từ internet
+                        var imageBytes = await DownloadImageAsync(url);
+                        if (imageBytes != null)
+                        {
+                            parts.Add(new
+                            {
+                                inline_data = new
+                                {
+                                    mime_type = GetMimeType(url),
+                                    data = Convert.ToBase64String(imageBytes)
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Xử lý Base64 images (gửi trực tiếp từ FE)
+            if (base64Images != null && base64Images.Any())
+            {
+                foreach (var base64String in base64Images.Take(3))
+                {
+                    // Base64 string có thể ở 2 dạng:
+                    // 1. "data:image/jpeg;base64,/9j/4AAQSkZJ..." (Data URI)
+                    // 2. "/9j/4AAQSkZJ..." (pure base64)
+
+                    if (base64String.StartsWith("data:"))
+                    {
+                        var (mimeType, base64Data) = ExtractBase64FromDataUri(base64String);
+                        if (!string.IsNullOrEmpty(base64Data))
+                        {
+                            parts.Add(new
+                            {
+                                inline_data = new
+                                {
+                                    mime_type = mimeType,
+                                    data = base64Data
+                                }
+                            });
+                        }
+                    }
+                    else
+                    {
+                        // Pure base64 - giả định là JPEG nếu không có MIME type
                         parts.Add(new
                         {
                             inline_data = new
                             {
-                                mime_type = GetMimeType(url),
-                                data = Convert.ToBase64String(imageBytes)
+                                mime_type = "image/jpeg",
+                                data = base64String
                             }
                         });
                     }
@@ -148,6 +209,37 @@ namespace HakiBaVuong.Controllers
             {
 
                 return "Oops! Bot đang lỗi nhẹ, bạn thử lại sau 5 giây nha!";
+            }
+        }
+
+        private (string mimeType, string base64Data) ExtractBase64FromDataUri(string dataUri)
+        {
+            try
+            {
+                // Format: "data:image/jpeg;base64,/9j/4AAQSkZJ..."
+                if (!dataUri.StartsWith("data:"))
+                    return ("image/jpeg", dataUri);
+
+                var parts = dataUri.Split(',');
+                if (parts.Length != 2)
+                    return ("image/jpeg", "");
+
+                var mimeTypePart = parts[0]; // "data:image/jpeg;base64"
+                var base64Data = parts[1];   // "/9j/4AAQSkZJ..."
+
+                var mimeType = "image/jpeg"; // default
+                if (mimeTypePart.Contains("image/png"))
+                    mimeType = "image/png";
+                else if (mimeTypePart.Contains("image/webp"))
+                    mimeType = "image/webp";
+                else if (mimeTypePart.Contains("image/gif"))
+                    mimeType = "image/gif";
+
+                return (mimeType, base64Data);
+            }
+            catch
+            {
+                return ("image/jpeg", "");
             }
         }
 
@@ -264,7 +356,8 @@ namespace HakiBaVuong.Controllers
     public class ChatRequest
     {
         public string Question { get; set; } = "";
-        public List<string>? ImageUrls { get; set; } 
+        public List<string>? ImageUrls { get; set; }
+        public List<string>? Base64Images { get; set; }
     }
 
     public class ChatMessage
