@@ -596,6 +596,33 @@ namespace HakiBaVuong.Migrations
                     b.ToTable("Shippers");
                 });
 
+            modelBuilder.Entity("HakiBaVuong.Models.ShipperLocation", b =>
+                {
+                    b.Property<int>("ShipperId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ShipperId"));
+
+                    b.Property<decimal>("Latitude")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Longitude")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ShipperId1")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("ShipperId");
+
+                    b.HasIndex("ShipperId1");
+
+                    b.ToTable("ShipperLocations");
+                });
+
             modelBuilder.Entity("HakiBaVuong.Models.ShipperRating", b =>
                 {
                     b.Property<int>("RatingId")
@@ -926,6 +953,17 @@ namespace HakiBaVuong.Migrations
                         .IsRequired();
 
                     b.Navigation("Brand");
+                });
+
+            modelBuilder.Entity("HakiBaVuong.Models.ShipperLocation", b =>
+                {
+                    b.HasOne("HakiBaVuong.Models.Shipper", "Shipper")
+                        .WithMany()
+                        .HasForeignKey("ShipperId1")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Shipper");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.ShipperRating", b =>
