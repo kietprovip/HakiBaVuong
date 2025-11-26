@@ -25,7 +25,8 @@ namespace HakiBaVuong.Data
         public DbSet<Revenue> Revenues { get; set; }
         public DbSet<RevenueHistory> RevenueHistories { get; set; }
         public DbSet<Wishlist> Wishlists { get; set; }
-
+        public DbSet<Shipper> Shippers { get; set; }
+        public DbSet<ShipperRating> ShipperRatings { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Product>()
