@@ -41,5 +41,9 @@ namespace HakiBaVuong.Models
         public virtual Payment Payment { get; set; }
 
         public virtual ICollection<OrderItem> OrderItems { get; set; }
+        public int? ShipperId { get; set; }
+
+        [ForeignKey("ShipperId")]
+        public virtual Shipper? Shipper { get; set; }
     }
 }

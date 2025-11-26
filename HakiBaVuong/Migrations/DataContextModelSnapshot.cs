@@ -828,13 +828,15 @@ namespace HakiBaVuong.Migrations
                         .WithMany("Orders")
                         .HasForeignKey("CustomerId1");
 
-                    b.HasOne("HakiBaVuong.Models.Shipper", null)
+                    b.HasOne("HakiBaVuong.Models.Shipper", "Shipper")
                         .WithMany("AssignedOrders")
                         .HasForeignKey("ShipperId");
 
                     b.Navigation("Brand");
 
                     b.Navigation("Customer");
+
+                    b.Navigation("Shipper");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.OrderItem", b =>

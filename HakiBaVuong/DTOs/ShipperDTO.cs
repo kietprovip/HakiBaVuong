@@ -9,5 +9,6 @@
         public string VehicleType { get; set; }
         public string LicensePlate { get; set; }
         public double? Rating { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 }

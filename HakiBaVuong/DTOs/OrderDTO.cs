@@ -16,6 +16,8 @@
         public DateTime CreatedAt { get; set; }
         public List<OrderItemDTO> OrderItems { get; set; }
         public PaymentDTO Payment { get; set; }
+        public string? ShipperName { get; set; }
+        public string? ShipperPhone { get; set; }
     }
 
     public class PaymentDTO
