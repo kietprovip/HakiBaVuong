@@ -821,5 +821,40 @@ namespace HakiBaVuong.Controllers
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(userIdClaim, out int userId) ? userId : null;
         }
+        [HttpGet("{orderId}/tracking")]
+        [Authorize] // Customer phải đăng nhập
+        public async Task<IActionResult> GetTracking(int orderId)
+        {
+            var customerId = GetCustomerId();
+            var order = await _context.Orders
+                .Include(o => o.Shipper)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId && o.CustomerId == customerId);
+
+            if (order == null || order.ShipperId == null || order.DeliveryStatus != "Đang giao")
+                return NotFound(new { message = "Đơn hàng chưa được giao hoặc không tồn tại." });
+
+            var location = await _context.ShipperLocations
+                .Where(l => l.ShipperId == order.ShipperId)
+                .Select(l => new { l.Latitude, l.Longitude, l.UpdatedAt })
+                .FirstOrDefaultAsync();
+
+            var customerLocation = new { Latitude = 0m, Longitude = 0m }; // Có thể dùng Google Geocoding từ order.Address
+
+            return Ok(new
+            {
+                orderId = order.OrderId,
+                deliveryStatus = order.DeliveryStatus,
+                shipper = new
+                {
+                    name = order.Shipper.Name,
+                    phone = order.Shipper.Phone,
+                    vehicle = order.Shipper.VehicleType,
+                    licensePlate = order.Shipper.LicensePlate
+                },
+                shipperLocation = location ?? new { Latitude = 0m, Longitude = 0m, UpdatedAt = DateTime.UtcNow },
+                customerLocation,
+                estimatedMinutes = 15 // Có thể tính thật bằng Google Distance Matrix API
+            });
+        }
     }
 }

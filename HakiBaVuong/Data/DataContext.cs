@@ -27,6 +27,7 @@ namespace HakiBaVuong.Data
         public DbSet<Wishlist> Wishlists { get; set; }
         public DbSet<Shipper> Shippers { get; set; }
         public DbSet<ShipperRating> ShipperRatings { get; set; }
+        public DbSet<ShipperLocation> ShipperLocations { get; set; } = null!;
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Product>()

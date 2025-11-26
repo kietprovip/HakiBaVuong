@@ -316,6 +316,7 @@ namespace HakiBaVuong.Controllers
                         p.Name,
                         p.PriceSell,
                         p.Rating,
+                        p.Description,
                         Brand = p.Brand.Name ?? "Không rõ",
                         Cats = p.ProductCategories.Select(pc => pc.Category.Name ?? "").ToList()
                     })

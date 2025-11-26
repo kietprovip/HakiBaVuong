@@ -174,23 +174,33 @@ namespace HakiBaVuong.Controllers
 
         // ==================== 7. CẬP NHẬT VỊ TRÍ GPS (dùng cho map realtime) ====================
         [HttpPost("update-location")]
+        [Authorize(Roles = "Shipper")]
         public async Task<IActionResult> UpdateLocation([FromBody] LocationDTO model)
         {
-            if (model.Lat < -90 || model.Lat > 90 || model.Long < -180 || model.Long > 180)
-                return BadRequest(new { message = "Tọa độ không hợp lệ." });
-
             var shipperId = GetCurrentShipperId();
 
-            // Lưu vào cache (Redis) để frontend poll realtime
-            var locationJson = System.Text.Json.JsonSerializer.Serialize(new { model.Lat, model.Long, UpdatedAt = DateTime.UtcNow });
-            await _context.Database.ExecuteSqlRawAsync(
-                $"INSERT INTO ShipperLocations (ShipperId, Latitude, Longitude, UpdatedAt) VALUES ({shipperId}, {model.Lat}, {model.Long}, GETUTCDATE()) " +
-                $"ON DUPLICATE KEY UPDATE Latitude = {model.Lat}, Longitude = {model.Long}, UpdatedAt = GETUTCDATE()"
-            ); // Nếu dùng MySQL, thay bằng cách khác nếu SQL Server
+            var loc = new ShipperLocation
+            {
+                ShipperId = shipperId,
+                Latitude = (decimal)model.Lat,
+                Longitude = (decimal)model.Long,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-            // Hoặc dùng DistributedCache nếu không có bảng
-            // await _cache.SetStringAsync($"shipper_loc_{shipperId}", locationJson, TimeSpan.FromMinutes(10));
+            var existing = await _context.ShipperLocations.FindAsync(shipperId);
+            if (existing != null)
+            {
+                existing.Latitude = loc.Latitude;
+                existing.Longitude = loc.Longitude;
+                existing.UpdatedAt = loc.UpdatedAt;
+                _context.ShipperLocations.Update(existing);
+            }
+            else
+            {
+                _context.ShipperLocations.Add(loc);
+            }
 
+            await _context.SaveChangesAsync();
             return Ok(new { message = "Cập nhật vị trí thành công!" });
         }
 
