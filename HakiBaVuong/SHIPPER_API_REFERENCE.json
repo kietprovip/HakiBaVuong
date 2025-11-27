@@ -1,0 +1,292 @@
+{
+  "info": {
+    "title": "Shipper Order Management API",
+    "version": "v1",
+    "baseUrl": "http://localhost:7258/api/shipper",
+    "authentication": "Bearer JWT Token (Shipper Role)",
+    "description": "Qu?n lý ??n hàng giao cho Shipper - 3 tabs (ch? giao, ?ang giao, ?ã giao)"
+  },
+  "endpoints": [
+    {
+      "name": "Get Pending Orders (Tab 1)",
+      "method": "GET",
+      "path": "/pending-orders",
+      "description": "Danh sách ??n ch? shipper nh?n",
+      "authorization": "Required (Shipper)",
+      "parameters": [],
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "orderId": 1,
+            "brandId": 5,
+            "customerId": 10,
+            "fullName": "Nguy?n V?n A",
+            "phone": "0987654321",
+            "address": "123 ???ng ABC, Hà N?i",
+            "status": "?ã thanh toán",
+            "deliveryStatus": "??i giao hàng",
+            "totalAmount": 150000,
+            "createdAt": "2025-01-15T10:30:00Z",
+            "estimatedDeliveryDate": "2025-01-16T18:00:00Z",
+            "orderItems": [
+              {
+                "itemId": 1,
+                "orderId": 1,
+                "productId": 5,
+                "productName": "S?n ph?m A",
+                "quantity": 2,
+                "price": 75000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Accept Order",
+      "method": "POST",
+      "path": "/accept-order/{orderId}",
+      "description": "Shipper nh?n giao ??n",
+      "authorization": "Required (Shipper)",
+      "parameters": [
+        {
+          "name": "orderId",
+          "in": "path",
+          "type": "integer",
+          "required": true,
+          "example": 1
+        }
+      ],
+      "response": {
+        "status": 200,
+        "body": {
+          "message": "Nh?n giao ??n thành công!",
+          "orderId": 1
+        }
+      },
+      "errors": [
+        {
+          "status": 404,
+          "message": "??n hàng không t?n t?i."
+        },
+        {
+          "status": 400,
+          "message": "??n hàng ?ã ???c shipper khác nh?n."
+        },
+        {
+          "status": 400,
+          "message": "??n hàng ch?a s?n sàng ?? giao."
+        }
+      ]
+    },
+    {
+      "name": "Get Deliveries In Progress (Tab 2)",
+      "method": "GET",
+      "path": "/deliveries-in-progress",
+      "description": "Danh sách ??n ?ang giao c?a shipper",
+      "authorization": "Required (Shipper)",
+      "parameters": [],
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "orderId": 1,
+            "brandId": 5,
+            "customerId": 10,
+            "fullName": "Nguy?n V?n A",
+            "phone": "0987654321",
+            "address": "123 ???ng ABC, Hà N?i",
+            "status": "?ã thanh toán",
+            "deliveryStatus": "?ang giao hàng",
+            "totalAmount": 150000,
+            "createdAt": "2025-01-15T10:30:00Z",
+            "estimatedDeliveryDate": "2025-01-16T18:00:00Z",
+            "orderItems": [
+              {
+                "itemId": 1,
+                "orderId": 1,
+                "productId": 5,
+                "productName": "S?n ph?m A",
+                "quantity": 2,
+                "price": 75000
+              }
+            ],
+            "payment": {
+              "paymentId": 1,
+              "amount": 150000,
+              "method": "COD",
+              "status": "Pending"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Complete Delivery",
+      "method": "POST",
+      "path": "/complete-delivery/{orderId}",
+      "description": "Shipper xác nh?n ?ã giao xong",
+      "authorization": "Required (Shipper)",
+      "parameters": [
+        {
+          "name": "orderId",
+          "in": "path",
+          "type": "integer",
+          "required": true,
+          "example": 1
+        }
+      ],
+      "response": {
+        "status": 200,
+        "body": {
+          "message": "Giao hàng thành công!",
+          "order": {
+            "orderId": 1,
+            "brandId": 5,
+            "customerId": 10,
+            "fullName": "Nguy?n V?n A",
+            "phone": "0987654321",
+            "address": "123 ???ng ABC, Hà N?i",
+            "status": "?ã thanh toán",
+            "deliveryStatus": "?ã giao hàng",
+            "totalAmount": 150000,
+            "createdAt": "2025-01-15T10:30:00Z",
+            "estimatedDeliveryDate": "2025-01-16T18:00:00Z",
+            "orderItems": [
+              {
+                "itemId": 1,
+                "orderId": 1,
+                "productId": 5,
+                "productName": "S?n ph?m A",
+                "quantity": 2,
+                "price": 75000
+              }
+            ],
+            "payment": {
+              "paymentId": 1,
+              "amount": 150000,
+              "method": "COD",
+              "status": "Pending"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 404,
+          "message": "Không tìm th?y ??n hàng."
+        },
+        {
+          "status": 400,
+          "message": "??n hàng ch?a ? tr?ng thái ?ang giao."
+        }
+      ]
+    },
+    {
+      "name": "Get Completed Deliveries (Tab 3)",
+      "method": "GET",
+      "path": "/completed-deliveries",
+      "description": "Danh sách ??n ?ã giao (l?ch s?)",
+      "authorization": "Required (Shipper)",
+      "parameters": [
+        {
+          "name": "page",
+          "in": "query",
+          "type": "integer",
+          "default": 1,
+          "example": 1
+        },
+        {
+          "name": "pageSize",
+          "in": "query",
+          "type": "integer",
+          "default": 20,
+          "example": 20
+        }
+      ],
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "orderId": 1,
+              "brandId": 5,
+              "customerId": 10,
+              "fullName": "Nguy?n V?n A",
+              "phone": "0987654321",
+              "address": "123 ???ng ABC, Hà N?i",
+              "status": "?ã thanh toán",
+              "deliveryStatus": "?ã giao hàng",
+              "totalAmount": 150000,
+              "createdAt": "2025-01-15T10:30:00Z",
+              "estimatedDeliveryDate": "2025-01-16T18:00:00Z",
+              "orderItems": [
+                {
+                  "itemId": 1,
+                  "orderId": 1,
+                  "productId": 5,
+                  "productName": "S?n ph?m A",
+                  "quantity": 2,
+                  "price": 75000
+                }
+              ],
+              "payment": {
+                "paymentId": 1,
+                "amount": 150000,
+                "method": "COD",
+                "status": "Pending"
+              }
+            }
+          ],
+          "page": 1,
+          "pageSize": 20,
+          "total": 45
+        }
+      }
+    }
+  ],
+  "curlExamples": [
+    {
+      "name": "Get Pending Orders",
+      "curl": "curl -X GET \"http://localhost:7258/api/shipper/pending-orders\" -H \"Authorization: Bearer {token}\" -H \"Content-Type: application/json\""
+    },
+    {
+      "name": "Accept Order",
+      "curl": "curl -X POST \"http://localhost:7258/api/shipper/accept-order/1\" -H \"Authorization: Bearer {token}\" -H \"Content-Type: application/json\""
+    },
+    {
+      "name": "Get Deliveries In Progress",
+      "curl": "curl -X GET \"http://localhost:7258/api/shipper/deliveries-in-progress\" -H \"Authorization: Bearer {token}\" -H \"Content-Type: application/json\""
+    },
+    {
+      "name": "Complete Delivery",
+      "curl": "curl -X POST \"http://localhost:7258/api/shipper/complete-delivery/1\" -H \"Authorization: Bearer {token}\" -H \"Content-Type: application/json\""
+    },
+    {
+      "name": "Get Completed Deliveries",
+      "curl": "curl -X GET \"http://localhost:7258/api/shipper/completed-deliveries?page=1&pageSize=20\" -H \"Authorization: Bearer {token}\" -H \"Content-Type: application/json\""
+    }
+  ],
+  "javascriptExamples": [
+    {
+      "name": "Fetch Pending Orders",
+      "code": "const response = await fetch('http://localhost:7258/api/shipper/pending-orders', {\n  method: 'GET',\n  headers: {\n    'Authorization': `Bearer ${token}`,\n    'Content-Type': 'application/json'\n  }\n});\nconst data = await response.json();"
+    },
+    {
+      "name": "Accept Order",
+      "code": "const response = await fetch(`http://localhost:7258/api/shipper/accept-order/${orderId}`, {\n  method: 'POST',\n  headers: {\n    'Authorization': `Bearer ${token}`,\n    'Content-Type': 'application/json'\n  }\n});\nconst data = await response.json();"
+    },
+    {
+      "name": "Complete Delivery",
+      "code": "const response = await fetch(`http://localhost:7258/api/shipper/complete-delivery/${orderId}`, {\n  method: 'POST',\n  headers: {\n    'Authorization': `Bearer ${token}`,\n    'Content-Type': 'application/json'\n  }\n});\nconst data = await response.json();"
+    }
+  ],
+  "notes": {
+    "timestamps": "T?t c? dùng UTC format (ISO 8601)",
+    "authorization": "JWT Bearer Token v?i Role = 'Shipper'",
+    "shipperId": "T? ??ng l?y t? token claims, không c?n truy?n",
+    "deliveryStatus": "Phân bi?t hoa/th??ng: '??i giao hàng', '?ang giao hàng', '?ã giao hàng'",
+    "futureFeatures": "Rating shipper, Real-time tracking, Delivery proofs - s? thêm sau"
+  }
+}

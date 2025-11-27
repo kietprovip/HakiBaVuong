@@ -76,23 +76,38 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Cập nhật hồ sơ thành công!" });
         }
 
-        // ==================== 3. DANH SÁCH ĐƠN HÀNG CẦN GIAO (gần nhất, đang chờ) ====================
+        // ==================== 3. DANH SÁCH ĐƠN HÀNG CẦN GIAO (chờ shipper nhận) ====================
         [HttpGet("pending-orders")]
         public async Task<ActionResult<IEnumerable<OrderDTO>>> GetPendingOrders()
         {
             var orders = await _context.Orders
-                .Where(o => o.DeliveryStatus == "Đã thanh toán" && o.ShipperId == null) // Chưa có shipper
+                .Where(o => o.DeliveryStatus == "Đợi giao hàng" && o.ShipperId == null)
+                .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
                 .OrderBy(o => o.CreatedAt)
                 .Take(20)
                 .Select(o => new OrderDTO
                 {
                     OrderId = o.OrderId,
+                    BrandId = o.BrandId,
+                    CustomerId = o.CustomerId,
                     FullName = o.FullName,
                     Phone = o.Phone,
                     Address = o.Address,
+                    Status = o.Status,
+                    DeliveryStatus = o.DeliveryStatus,
                     TotalAmount = o.TotalAmount,
                     CreatedAt = o.CreatedAt,
-                    EstimatedDeliveryDate = o.EstimatedDeliveryDate
+                    EstimatedDeliveryDate = o.EstimatedDeliveryDate,
+                    OrderItems = o.OrderItems.Select(oi => new OrderItemDTO
+                    {
+                        ItemId = oi.ItemId,
+                        OrderId = oi.OrderId,
+                        ProductId = oi.ProductId,
+                        ProductName = oi.ProductName,
+                        Quantity = oi.Quantity,
+                        Price = oi.Price
+                    }).ToList()
                 })
                 .ToListAsync();
 
@@ -111,11 +126,11 @@ namespace HakiBaVuong.Controllers
             if (order.ShipperId.HasValue)
                 return BadRequest(new { message = "Đơn hàng đã được shipper khác nhận." });
 
-            if (order.DeliveryStatus != "Đã thanh toán")
+            if (order.DeliveryStatus != "Đợi giao hàng")
                 return BadRequest(new { message = "Đơn hàng chưa sẵn sàng để giao." });
 
             order.ShipperId = shipperId;
-            order.DeliveryStatus = "Đang giao";
+            order.DeliveryStatus = "Đang giao hàng";
             order.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -125,26 +140,45 @@ namespace HakiBaVuong.Controllers
         }
 
         // ==================== 5. DANH SÁCH ĐƠN HÀNG ĐANG GIAO CỦA TÔI ====================
-        [HttpGet("my-deliveries")]
-        public async Task<ActionResult<IEnumerable<OrderDTO>>> GetMyDeliveries()
+        [HttpGet("deliveries-in-progress")]
+        public async Task<ActionResult<IEnumerable<OrderDTO>>> GetDeliveriesInProgress()
         {
             var shipperId = GetCurrentShipperId();
 
             var orders = await _context.Orders
-                .Where(o => o.ShipperId == shipperId && o.DeliveryStatus == "Đang giao")
+                .Where(o => o.ShipperId == shipperId && o.DeliveryStatus == "Đang giao hàng")
+                .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
+                .Include(o => o.Payment)
                 .Select(o => new OrderDTO
                 {
                     OrderId = o.OrderId,
+                    BrandId = o.BrandId,
+                    CustomerId = o.CustomerId,
                     FullName = o.FullName,
                     Phone = o.Phone,
                     Address = o.Address,
+                    Status = o.Status,
+                    DeliveryStatus = o.DeliveryStatus,
                     TotalAmount = o.TotalAmount,
                     EstimatedDeliveryDate = o.EstimatedDeliveryDate,
+                    CreatedAt = o.CreatedAt,
                     OrderItems = o.OrderItems.Select(oi => new OrderItemDTO
                     {
+                        ItemId = oi.ItemId,
+                        OrderId = oi.OrderId,
+                        ProductId = oi.ProductId,
                         ProductName = oi.ProductName,
-                        Quantity = oi.Quantity
-                    }).ToList()
+                        Quantity = oi.Quantity,
+                        Price = oi.Price
+                    }).ToList(),
+                    Payment = o.Payment != null ? new PaymentDTO
+                    {
+                        PaymentId = o.Payment.PaymentId,
+                        Amount = o.Payment.Amount,
+                        Method = o.Payment.Method,
+                        Status = o.Payment.Status
+                    } : null
                 })
                 .ToListAsync();
 
@@ -157,22 +191,108 @@ namespace HakiBaVuong.Controllers
         {
             var shipperId = GetCurrentShipperId();
 
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == orderId && o.ShipperId == shipperId);
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
+                .Include(o => o.Payment)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId && o.ShipperId == shipperId);
+            
             if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
 
-            if (order.DeliveryStatus != "Đang giao")
+            if (order.DeliveryStatus != "Đang giao hàng")
                 return BadRequest(new { message = "Đơn hàng chưa ở trạng thái đang giao." });
 
-            order.DeliveryStatus = "Hoàn thành";
+            order.DeliveryStatus = "Đã giao hàng";
             order.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("Shipper {ShipperId} hoàn thành giao đơn {OrderId}", shipperId, orderId);
-            return Ok(new { message = "Giao hàng thành công! Cảm ơn bạn!" });
+            
+            var completedOrder = new OrderDTO
+            {
+                OrderId = order.OrderId,
+                BrandId = order.BrandId,
+                CustomerId = order.CustomerId,
+                FullName = order.FullName,
+                Phone = order.Phone,
+                Address = order.Address,
+                Status = order.Status,
+                DeliveryStatus = order.DeliveryStatus,
+                TotalAmount = order.TotalAmount,
+                EstimatedDeliveryDate = order.EstimatedDeliveryDate,
+                CreatedAt = order.CreatedAt,
+                OrderItems = order.OrderItems.Select(oi => new OrderItemDTO
+                {
+                    ItemId = oi.ItemId,
+                    OrderId = oi.OrderId,
+                    ProductId = oi.ProductId,
+                    ProductName = oi.ProductName,
+                    Quantity = oi.Quantity,
+                    Price = oi.Price
+                }).ToList(),
+                Payment = order.Payment != null ? new PaymentDTO
+                {
+                    PaymentId = order.Payment.PaymentId,
+                    Amount = order.Payment.Amount,
+                    Method = order.Payment.Method,
+                    Status = order.Payment.Status
+                } : null
+            };
+
+            return Ok(new { message = "Giao hàng thành công!", order = completedOrder });
         }
 
-        // ==================== 7. CẬP NHẬT VỊ TRÍ GPS (dùng cho map realtime) ====================
+        // ==================== 7. DANH SÁCH ĐƠN HÀNG ĐÃ GIAO ====================
+        [HttpGet("completed-deliveries")]
+        public async Task<ActionResult<IEnumerable<OrderDTO>>> GetCompletedDeliveries([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        {
+            var shipperId = GetCurrentShipperId();
+
+            var orders = await _context.Orders
+                .Where(o => o.ShipperId == shipperId && o.DeliveryStatus == "Đã giao hàng")
+                .Include(o => o.OrderItems)
+                .ThenInclude(i => i.Product)
+                .Include(o => o.Payment)
+                .OrderByDescending(o => o.UpdatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(o => new OrderDTO
+                {
+                    OrderId = o.OrderId,
+                    BrandId = o.BrandId,
+                    CustomerId = o.CustomerId,
+                    FullName = o.FullName,
+                    Phone = o.Phone,
+                    Address = o.Address,
+                    Status = o.Status,
+                    DeliveryStatus = o.DeliveryStatus,
+                    TotalAmount = o.TotalAmount,
+                    EstimatedDeliveryDate = o.EstimatedDeliveryDate,
+                    CreatedAt = o.CreatedAt,
+                    OrderItems = o.OrderItems.Select(oi => new OrderItemDTO
+                    {
+                        ItemId = oi.ItemId,
+                        OrderId = oi.OrderId,
+                        ProductId = oi.ProductId,
+                        ProductName = oi.ProductName,
+                        Quantity = oi.Quantity,
+                        Price = oi.Price
+                    }).ToList(),
+                    Payment = o.Payment != null ? new PaymentDTO
+                    {
+                        PaymentId = o.Payment.PaymentId,
+                        Amount = o.Payment.Amount,
+                        Method = o.Payment.Method,
+                        Status = o.Payment.Status
+                    } : null
+                })
+                .ToListAsync();
+
+            return Ok(new { data = orders, page, pageSize, total = await _context.Orders.CountAsync(o => o.ShipperId == shipperId && o.DeliveryStatus == "Đã giao hàng") });
+        }
+
+        // ==================== 8. CẬP NHẬT VỊ TRÍ GPS (dùng cho map realtime) ====================
         [HttpPost("update-location")]
         [Authorize(Roles = "Shipper")]
         public async Task<IActionResult> UpdateLocation([FromBody] LocationDTO model)
@@ -204,14 +324,14 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Cập nhật vị trí thành công!" });
         }
 
-        // ==================== 8. THỐNG KÊ DOANH THU (tùy chọn) ====================
+        // ==================== 9. THỐNG KÊ DOANH THU (tùy chọn) ====================
         [HttpGet("stats")]
         public async Task<ActionResult<object>> GetStats()
         {
             var shipperId = GetCurrentShipperId();
 
-            var totalDelivered = await _context.Orders.CountAsync(o => o.ShipperId == shipperId && o.DeliveryStatus == "Hoàn thành");
-            var todayDelivered = await _context.Orders.CountAsync(o => o.ShipperId == shipperId && o.DeliveryStatus == "Hoàn thành" && o.UpdatedAt >= DateTime.UtcNow.Date);
+            var totalDelivered = await _context.Orders.CountAsync(o => o.ShipperId == shipperId && o.DeliveryStatus == "Đã giao hàng");
+            var todayDelivered = await _context.Orders.CountAsync(o => o.ShipperId == shipperId && o.DeliveryStatus == "Đã giao hàng" && o.UpdatedAt >= DateTime.UtcNow.Date);
 
             return Ok(new
             {
