@@ -48,6 +48,8 @@ namespace HakiBaVuong.Controllers
                 model.FullName = address.FullName;
                 model.Phone = address.Phone;
                 model.Address = address.Address;
+                model.Latitude = address.Latitude;
+                model.Longitude = address.Longitude;
             }
             else
             {
@@ -113,6 +115,8 @@ namespace HakiBaVuong.Controllers
                     FullName = model.FullName,
                     Phone = model.Phone,
                     Address = model.Address,
+                    Latitude = model.Latitude,
+                    Longitude = model.Longitude,
                     Status = model.PaymentMethod == "BankCard" ? "Chờ thanh toán" : "Chưa thanh toán",
                     DeliveryStatus = "Đợi giao hàng",
                     TotalAmount = totalAmount,
@@ -319,6 +323,8 @@ namespace HakiBaVuong.Controllers
                     FullName = order.FullName,
                     Phone = order.Phone,
                     Address = order.Address,
+                    Latitude = order.Latitude,
+                    Longitude = order.Longitude,
                     Status = order.Status,
                     DeliveryStatus = order.DeliveryStatus,
                     EstimatedDeliveryDate = order.EstimatedDeliveryDate,
@@ -387,6 +393,8 @@ namespace HakiBaVuong.Controllers
                 FullName = order.FullName,
                 Phone = order.Phone,
                 Address = order.Address,
+                Latitude = order.Latitude,
+                Longitude = order.Longitude,
                 Status = order.Status,
                 DeliveryStatus = order.DeliveryStatus,
                 EstimatedDeliveryDate = order.EstimatedDeliveryDate,
@@ -456,6 +464,8 @@ namespace HakiBaVuong.Controllers
                 FullName = o.FullName,
                 Phone = o.Phone,
                 Address = o.Address,
+                Latitude = o.Latitude,
+                Longitude = o.Longitude,
                 Status = o.Status,
                 DeliveryStatus = o.DeliveryStatus,
                 EstimatedDeliveryDate = o.EstimatedDeliveryDate,
@@ -533,6 +543,8 @@ namespace HakiBaVuong.Controllers
                 FullName = o.FullName,
                 Phone = o.Phone,
                 Address = o.Address,
+                Latitude = o.Latitude,
+                Longitude = o.Longitude,
                 Status = o.Status,
                 DeliveryStatus = o.DeliveryStatus,
                 EstimatedDeliveryDate = o.EstimatedDeliveryDate,
@@ -720,6 +732,8 @@ namespace HakiBaVuong.Controllers
                 FullName = order.FullName,
                 Phone = order.Phone,
                 Address = order.Address,
+                Latitude = order.Latitude,
+                Longitude = order.Longitude,
                 Status = order.Status,
                 DeliveryStatus = order.DeliveryStatus,
                 EstimatedDeliveryDate = order.EstimatedDeliveryDate,
