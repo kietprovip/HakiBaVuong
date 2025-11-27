@@ -16,7 +16,7 @@ namespace HakiBaVuong.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // This migration is empty - tables already created in previous migration
+            // This migration is empty - tables already created in previous migration..
         }
     }
 }
