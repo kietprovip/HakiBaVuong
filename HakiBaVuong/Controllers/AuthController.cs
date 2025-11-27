@@ -125,8 +125,8 @@ public class AuthController : ControllerBase
         user.Password = BCrypt.Net.BCrypt.EnhancedHashPassword(model.Password);
         user.CreatedAt = DateTime.UtcNow;
         user.IsEmailVerified = false;
-        user.Role = "Staff";
-        user.BrandId = null;
+        user.Role = "Brand";  // Mặc định là Brand
+        user.BrandId = null;  // Sẽ được gán sau khi xác thực email
 
         try
         {
@@ -178,6 +178,22 @@ public class AuthController : ControllerBase
         }
 
         user.IsEmailVerified = true;
+        
+        // Nếu user là Brand, tạo Brand record
+        if (user.Role == "Brand" && !user.BrandId.HasValue)
+        {
+            var brand = new Brand
+            {
+                Name = user.Name,
+                OwnerId = user.UserId,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.Brands.Add(brand);
+            await _context.SaveChangesAsync();
+            user.BrandId = brand.BrandId;
+            _logger.LogInformation("Tạo Brand mới sau xác thực email: {Email}, BrandId: {BrandId}", user.Email, brand.BrandId);
+        }
+
         _context.Users.Update(user);
         await _cache.RemoveAsync($"RegisterOTP_{model.Email}");
         await _context.SaveChangesAsync();
@@ -191,7 +207,10 @@ public class AuthController : ControllerBase
     {
         _logger.LogInformation("Đăng nhập được gọi cho email: {Email}", model.Email);
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
+        var user = await _context.Users
+            .Include(u => u.Brand)
+            .FirstOrDefaultAsync(u => u.Email == model.Email);
+        
         if (user == null || !BCrypt.Net.BCrypt.EnhancedVerify(model.Password, user.Password))
         {
             _logger.LogWarning("Thông tin đăng nhập không hợp lệ cho email: {Email}", model.Email);
@@ -204,8 +223,27 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Email chưa được xác thực." });
         }
 
+        // Nếu user là Brand nhưng chưa có BrandId, tạo brand mới
+        if (user.Role == "Brand" && !user.BrandId.HasValue)
+        {
+            var brand = new Brand
+            {
+                Name = user.Name,
+                OwnerId = user.UserId,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.Brands.Add(brand);
+            await _context.SaveChangesAsync();
+            user.BrandId = brand.BrandId;
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Tạo Brand mới cho user: {Email}, BrandId: {BrandId}", user.Email, brand.BrandId);
+        }
+
         var token = GenerateJwtToken(user);
-        _logger.LogInformation("Đăng nhập thành công cho email: {Email}", model.Email);
+        _logger.LogInformation("Đăng nhập thành công cho email: {Email}, Role: {Role}, BrandId: {BrandId}", 
+            user.Email, user.Role, user.BrandId);
+        
         return Ok(new
         {
             message = "Đăng nhập thành công.",

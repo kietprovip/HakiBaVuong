@@ -39,6 +39,14 @@ builder.Services.AddSwaggerGen(options =>
             new string[] { }
         }
     });
+    
+    // Thêm examples cho response
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "HakiBaVuong API",
+        Version = "v1",
+        Description = "API for Short Video Management"
+    });
 });
 builder.Services.AddAutoMapper(typeof(Program).Assembly);
 
@@ -117,6 +125,20 @@ app.UseFileServer(new FileServerOptions
     FileProvider = new PhysicalFileProvider(
         Path.Combine(builder.Environment.ContentRootPath, "Images")),
     RequestPath = "/images",
+    EnableDirectoryBrowsing = false
+});
+app.UseFileServer(new FileServerOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.ContentRootPath, "Uploads", "videos")),
+    RequestPath = "/Uploads/videos",
+    EnableDirectoryBrowsing = false
+});
+app.UseFileServer(new FileServerOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.ContentRootPath, "Uploads", "thumbnails")),
+    RequestPath = "/Uploads/thumbnails",
     EnableDirectoryBrowsing = false
 });
 app.UseCors("AllowReactApp");
