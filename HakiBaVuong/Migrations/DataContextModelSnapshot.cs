@@ -565,6 +565,9 @@ namespace HakiBaVuong.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IsEmailVerified")
+                        .HasColumnType("bit");
+
                     b.Property<string>("LicensePlate")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

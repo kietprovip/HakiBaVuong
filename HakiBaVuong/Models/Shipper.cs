@@ -27,6 +27,8 @@ namespace HakiBaVuong.Models
 
         public double? Rating { get; set; }  // Average rating (1-5)
 
+        public bool IsEmailVerified { get; set; } = false;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
