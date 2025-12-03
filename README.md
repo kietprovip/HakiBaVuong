@@ -1,2 +1,2 @@
 Đây là BE,
-Link FE: https://github.com/KingAzgad/doancosohutech.git
+Link FE: https://github.com/KingAzgad/HakiBaVuong.git
