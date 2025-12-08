@@ -61,4 +61,3 @@ with open('lightfm_model.pkl', 'wb') as f:
 print("TRAIN XONG 100%!")
 print(f"→ Số user: {len(dataset.mapping()[0])}")
 print(f"→ Số item: {len(dataset.mapping()[2])}")
-print("Copy file lightfm_model.pkl vào wwwroot/models/ là xong!")
