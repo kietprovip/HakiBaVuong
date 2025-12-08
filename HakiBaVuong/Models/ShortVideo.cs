@@ -26,5 +26,7 @@ namespace HakiBaVuong.Models
         public virtual ICollection<VideoProduct> VideoProducts { get; set; } = new List<VideoProduct>();
         public virtual ICollection<VideoLike> VideoLikes { get; set; } = new List<VideoLike>();
         public virtual ICollection<VideoComment> VideoComments { get; set; } = new List<VideoComment>();
+        public virtual ICollection<VideoView> VideoViews { get; set; } = new List<VideoView>();
+        public virtual ICollection<VideoShare> VideoShares { get; set; } = new List<VideoShare>();
     }
 }

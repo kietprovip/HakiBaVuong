@@ -6,11 +6,10 @@ namespace HakiBaVuong.Models
     public class VideoComment
     {
         [Key]
-        [Column(Order = 0)]
+        public int CommentId { get; set; }
+
         public int VideoId { get; set; }
 
-        [Key]
-        [Column(Order = 1)]
         public int? CustomerId { get; set; }
 
         [ForeignKey("VideoId")]

@@ -307,7 +307,8 @@ namespace HakiBaVuong.Controllers
                 VideoId = videoId,
                 CustomerId = customerId,
                 CustomerName = customer?.Name ?? "Khách",
-                Content = dto.Content
+                Content = dto.Content,
+                CreatedAt = DateTime.UtcNow
             };
 
             _db.VideoComments.Add(comment);
@@ -316,6 +317,7 @@ namespace HakiBaVuong.Controllers
 
             return Ok(new 
             { 
+                commentId = comment.CommentId,
                 videoId = videoId,
                 customerId = customerId,
                 customerName = comment.CustomerName,
@@ -338,6 +340,7 @@ namespace HakiBaVuong.Controllers
                 .Take(pageSize)
                 .Select(c => new 
                 {
+                    c.CommentId,
                     c.VideoId,
                     c.CustomerId,
                     c.CustomerName,
@@ -349,23 +352,29 @@ namespace HakiBaVuong.Controllers
             return Ok(comments);
         }
 
-        // DELETE: api/reels/{videoId}/comment/{customerId}
-        [HttpDelete("{videoId}/comment/{customerId}")]
+        // DELETE: api/reels/{videoId}/comment/{commentId}
+        [HttpDelete("{videoId}/comment/{commentId}")]
         [Authorize(Roles = "Customer")]
-        public async Task<IActionResult> DeleteComment(int videoId, int customerId)
+        public async Task<IActionResult> DeleteComment(int videoId, int commentId)
         {
             var authenticatedUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!int.TryParse(authenticatedUserId, out int userId) || userId != customerId)
+            if (!int.TryParse(authenticatedUserId, out int userId))
             {
-                return Unauthorized(new { message = "Bạn chỉ có thể xóa bình luận của chính mình." });
+                return Unauthorized(new { message = "Token không hợp lệ." });
             }
 
             var comment = await _db.VideoComments
-                .FirstOrDefaultAsync(c => c.VideoId == videoId && c.CustomerId == customerId);
+                .FirstOrDefaultAsync(c => c.CommentId == commentId && c.VideoId == videoId);
 
             if (comment == null)
             {
                 return NotFound(new { message = "Bình luận không tồn tại." });
+            }
+
+            // Chỉ cho phép xóa comment của chính mình
+            if (comment.CustomerId != userId)
+            {
+                return Unauthorized(new { message = "Bạn chỉ có thể xóa bình luận của chính mình." });
             }
 
             _db.VideoComments.Remove(comment);
@@ -373,6 +382,64 @@ namespace HakiBaVuong.Controllers
             await _db.SaveChangesAsync();
 
             return Ok(new { message = "Xóa bình luận thành công!" });
+        }
+
+        // POST: api/reels/{videoId}/view
+        [HttpPost("{videoId}/view")]
+        public async Task<IActionResult> ViewVideo(int videoId)
+        {
+            var video = await _db.ShortVideos.FindAsync(videoId);
+            if (video == null)
+            {
+                return NotFound(new { message = "Video không tồn tại." });
+            }
+
+            // Lấy customerId từ token nếu user đã login
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            int? customerId = null;
+            if (int.TryParse(customerIdClaim, out int parsed))
+                customerId = parsed;
+
+            bool isNewView = false;
+
+            // Kiểm tra view đã tồn tại chưa
+            if (customerId.HasValue)
+            {
+                var existingView = await _db.VideoViews
+                    .FirstOrDefaultAsync(vv => vv.VideoId == videoId && vv.CustomerId == customerId.Value);
+
+                if (existingView == null)
+                {
+                    // View lần đầu
+                    isNewView = true;
+                    _db.VideoViews.Add(new VideoView 
+                    { 
+                        VideoId = videoId, 
+                        CustomerId = customerId.Value,
+                        ViewedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    // Đã xem rồi, chỉ update lần xem gần nhất
+                    existingView.ViewedAt = DateTime.UtcNow;
+                    _db.VideoViews.Update(existingView);
+                }
+            }
+            else
+            {
+                // Nếu chưa login, luôn tính là view mới
+                isNewView = true;
+            }
+
+            // Tăng view count chỉ nếu là lần đầu xem
+            if (isNewView)
+            {
+                await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Views = Views + 1 WHERE VideoId = {0}", videoId);
+            }
+
+            await _db.SaveChangesAsync();
+            return Ok(new { message = "Đã ghi nhận lượt xem.", isNewView });
         }
 
         // POST: api/reels/{videoId}/share
@@ -385,6 +452,35 @@ namespace HakiBaVuong.Controllers
                 return NotFound(new { message = "Video không tồn tại." });
             }
 
+            // Lấy customerId từ token nếu user đã login
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            int? customerId = null;
+            if (int.TryParse(customerIdClaim, out int parsed))
+                customerId = parsed;
+
+            // Nếu user đã login, lưu vào bảng VideoShare
+            if (customerId.HasValue)
+            {
+                var existingShare = await _db.VideoShares
+                    .FirstOrDefaultAsync(vs => vs.VideoId == videoId && vs.CustomerId == customerId.Value);
+
+                if (existingShare == null)
+                {
+                    _db.VideoShares.Add(new VideoShare 
+                    { 
+                        VideoId = videoId, 
+                        CustomerId = customerId.Value,
+                        SharedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    existingShare.SharedAt = DateTime.UtcNow;
+                    _db.VideoShares.Update(existingShare);
+                }
+            }
+
+            // Tăng share count
             await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Shares = Shares + 1 WHERE VideoId = {0}", videoId);
             await _db.SaveChangesAsync();
 
@@ -846,6 +942,76 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogError(ex, "Error fetching brand stats");
                 return StatusCode(500, new { message = "Lỗi khi lấy thống kê brand.", error = ex.Message });
+            }
+        }
+
+        // GET: api/reels/brand/{brandId}/profile (Get detailed brand profile with video stats)
+        [HttpGet("brand/{brandId}/profile")]
+        public async Task<IActionResult> GetBrandProfile(int brandId)
+        {
+            try
+            {
+                var brand = await _db.Brands
+                    .Include(b => b.Owner)
+                    .FirstOrDefaultAsync(b => b.BrandId == brandId);
+                
+                if (brand == null)
+                {
+                    return NotFound(new { message = "Brand không tồn tại." });
+                }
+
+                var accessibleBrandIds = await GetAccessibleBrandIdsAsync();
+                if (accessibleBrandIds != null && !accessibleBrandIds.Contains(brandId))
+                    return Forbid();
+
+                var videos = await _db.ShortVideos
+                    .Where(v => v.BrandId == brandId)
+                    .ToListAsync();
+
+                var followers = await _db.BrandFollows
+                    .Where(bf => bf.BrandId == brandId)
+                    .CountAsync();
+
+                var profile = new
+                {
+                    brandId = brand.BrandId,
+                    brandName = brand.Name,
+                    ownerName = brand.Owner?.Name ?? "Không rõ",
+                    followers,
+                    statistics = new
+                    {
+                        totalVideos = videos.Count,
+                        totalViews = videos.Sum(v => v.Views),
+                        totalLikes = videos.Sum(v => v.Likes),
+                        totalComments = videos.Sum(v => v.CommentsCount),
+                        totalShares = videos.Sum(v => v.Shares),
+                        averageViews = videos.Count > 0 ? videos.Average(v => v.Views) : 0,
+                        averageLikes = videos.Count > 0 ? videos.Average(v => v.Likes) : 0
+                    },
+                    recentVideos = await _db.ShortVideos
+                        .Where(v => v.BrandId == brandId)
+                        .OrderByDescending(v => v.CreatedAt)
+                        .Take(5)
+                        .Select(v => new
+                        {
+                            v.VideoId,
+                            v.Caption,
+                            v.Views,
+                            v.Likes,
+                            v.CommentsCount,
+                            v.Shares,
+                            v.CreatedAt,
+                            v.ThumbnailUrl
+                        })
+                        .ToListAsync()
+                };
+
+                return Ok(profile);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching brand profile");
+                return StatusCode(500, new { message = "Lỗi khi lấy profile brand.", error = ex.Message });
             }
         }
 
