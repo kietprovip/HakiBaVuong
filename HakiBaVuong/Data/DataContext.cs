@@ -207,6 +207,15 @@ namespace HakiBaVuong.Data
             modelBuilder.Entity<VideoLike>()
                 .HasKey(vl => new { vl.VideoId, vl.CustomerId });
 
+            modelBuilder.Entity<VideoComment>()
+                .HasKey(vc => new { vc.VideoId, vc.CustomerId });
+
+            modelBuilder.Entity<VideoComment>()
+                .HasOne(vc => vc.Video)
+                .WithMany(v => v.VideoComments)
+                .HasForeignKey(vc => vc.VideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             modelBuilder.Entity<BrandFollow>()
                 .HasKey(bf => new { bf.BrandId, bf.CustomerId });
 

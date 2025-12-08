@@ -788,11 +788,13 @@ namespace HakiBaVuong.Migrations
 
             modelBuilder.Entity("HakiBaVuong.Models.VideoComment", b =>
                 {
-                    b.Property<int>("CommentId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                    b.Property<int>("VideoId")
+                        .HasColumnType("int")
+                        .HasColumnOrder(0);
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CommentId"));
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int")
+                        .HasColumnOrder(1);
 
                     b.Property<string>("Content")
                         .IsRequired()
@@ -801,19 +803,11 @@ namespace HakiBaVuong.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("CustomerId")
-                        .HasColumnType("int");
-
                     b.Property<string>("CustomerName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("VideoId")
-                        .HasColumnType("int");
-
-                    b.HasKey("CommentId");
-
-                    b.HasIndex("VideoId");
+                    b.HasKey("VideoId", "CustomerId");
 
                     b.ToTable("VideoComments");
                 });
@@ -821,13 +815,12 @@ namespace HakiBaVuong.Migrations
             modelBuilder.Entity("HakiBaVuong.Models.VideoLike", b =>
                 {
                     b.Property<int>("VideoId")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasColumnOrder(0);
 
                     b.Property<int>("CustomerId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Id")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasColumnOrder(1);
 
                     b.Property<DateTime>("LikedAt")
                         .HasColumnType("datetime2");
@@ -1193,13 +1186,15 @@ namespace HakiBaVuong.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("HakiBaVuong.Models.ShortVideo", null)
+                    b.HasOne("HakiBaVuong.Models.ShortVideo", "Video")
                         .WithMany("VideoLikes")
                         .HasForeignKey("VideoId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Customer");
+
+                    b.Navigation("Video");
                 });
 
             modelBuilder.Entity("HakiBaVuong.Models.VideoProduct", b =>

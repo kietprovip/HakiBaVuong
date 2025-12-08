@@ -31,6 +31,41 @@ namespace HakiBaVuong.Controllers
             _logger = logger;
         }
 
+        // Helper: determine which BrandIds the current authenticated user (owner/staff) can access.
+        // Returns null = no restriction (e.g. unauthenticated or Admin)
+        private async Task<List<int>?> GetAccessibleBrandIdsAsync()
+        {
+            if (!User.Identity?.IsAuthenticated ?? true)
+                return null;
+
+            if (User.IsInRole("Admin"))
+                return null;
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(userIdClaim, out int userId))
+                return null;
+
+            var user = await _db.Users.FindAsync(userId);
+            if (user == null)
+                return null;
+
+            int ownerId;
+            if (user.BrandId.HasValue)
+            {
+                var userBrand = await _db.Brands.FindAsync(user.BrandId.Value);
+                if (userBrand == null)
+                    return null;
+                ownerId = userBrand.OwnerId;
+            }
+            else
+            {
+                ownerId = userId;
+            }
+
+            var brandIds = await _db.Brands.Where(b => b.OwnerId == ownerId).Select(b => b.BrandId).ToListAsync();
+            return brandIds;
+        }
+
         // GET: api/reels/feed?page=1&customerId=123
         [HttpGet("feed")]
         public async Task<IActionResult> GetFeed([FromQuery] int page = 1, [FromQuery] int? customerId = null)
@@ -40,7 +75,14 @@ namespace HakiBaVuong.Controllers
             var query = _db.ShortVideos
                 .Include(v => v.Brand)
                 .Include(v => v.VideoProducts).ThenInclude(vp => vp.Product)
-                .OrderByDescending(v => v.CreatedAt);
+                .OrderByDescending(v => v.CreatedAt)
+                .AsQueryable();
+
+            var accessibleBrandIds = await GetAccessibleBrandIdsAsync();
+            if (accessibleBrandIds != null)
+            {
+                query = query.Where(v => accessibleBrandIds.Contains(v.BrandId));
+            }
 
             var videos = await query
                 .Skip((page - 1) * pageSize)
@@ -191,81 +233,159 @@ namespace HakiBaVuong.Controllers
             }
         }
 
-        // POST: api/reels/{id}/like
-        [HttpPost("{id}/like")]
+        // POST: api/reels/{videoId}/like
+        [HttpPost("{videoId}/like")]
         [Authorize(Roles = "Customer")]
-        public async Task<IActionResult> ToggleLike(int id)
+        public async Task<IActionResult> ToggleLike(int videoId)
         {
-            var customerId = int.Parse(User.FindFirst("CustomerId")!.Value);
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(customerIdClaim, out int customerId))
+            {
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
 
             var existing = await _db.VideoLikes
-                .FirstOrDefaultAsync(l => l.VideoId == id && l.CustomerId == customerId);
+                .FirstOrDefaultAsync(l => l.VideoId == videoId && l.CustomerId == customerId);
 
             if (existing == null)
             {
-                _db.VideoLikes.Add(new VideoLike { VideoId = id, CustomerId = customerId });
-                await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Likes = Likes + 1 WHERE VideoId = {0}", id);
+                _db.VideoLikes.Add(new VideoLike { VideoId = videoId, CustomerId = customerId });
+                await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Likes = Likes + 1 WHERE VideoId = {0}", videoId);
+                await _db.SaveChangesAsync();
+                return Ok(new { message = "Liked!", isLiked = true });
             }
             else
             {
                 _db.VideoLikes.Remove(existing);
-                await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Likes = Likes - 1 WHERE VideoId = {0}", id);
+                await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Likes = Likes - 1 WHERE VideoId = {0}", videoId);
+                await _db.SaveChangesAsync();
+                return Ok(new { message = "Unliked!", isLiked = false });
             }
-
-            await _db.SaveChangesAsync();
-            return Ok();
         }
 
-        // POST: api/reels/{id}/comment
-        [HttpPost("{id}/comment")]
+        // DELETE: api/reels/{videoId}/like
+        [HttpDelete("{videoId}/like")]
         [Authorize(Roles = "Customer")]
-        public async Task<IActionResult> Comment(int id, [FromBody] VideoCommentDTO dto)
+        public async Task<IActionResult> UnlikeDirect(int videoId)
         {
-            var customerId = int.Parse(User.FindFirst("CustomerId")!.Value);
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(customerIdClaim, out int customerId))
+            {
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
+            var existing = await _db.VideoLikes
+                .FirstOrDefaultAsync(l => l.VideoId == videoId && l.CustomerId == customerId);
+
+            if (existing == null)
+            {
+                return NotFound(new { message = "Bạn chưa like video này." });
+            }
+
+            _db.VideoLikes.Remove(existing);
+            await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Likes = Likes - 1 WHERE VideoId = {0}", videoId);
+            await _db.SaveChangesAsync();
+
+            return Ok(new { message = "Unliked!", isLiked = false });
+        }
+
+        // POST: api/reels/{videoId}/comment
+        [HttpPost("{videoId}/comment")]
+        [Authorize(Roles = "Customer")]
+        public async Task<IActionResult> Comment(int videoId, [FromBody] VideoCommentDTO dto)
+        {
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(customerIdClaim, out int customerId))
+            {
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
+
             var customer = await _db.Customers.FindAsync(customerId);
 
             var comment = new VideoComment
             {
-                VideoId = id,
+                VideoId = videoId,
                 CustomerId = customerId,
                 CustomerName = customer?.Name ?? "Khách",
                 Content = dto.Content
             };
 
             _db.VideoComments.Add(comment);
-            await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET CommentsCount = CommentsCount + 1 WHERE VideoId = {0}", id);
+            await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET CommentsCount = CommentsCount + 1 WHERE VideoId = {0}", videoId);
             await _db.SaveChangesAsync();
 
-            return Ok(comment);
+            return Ok(new 
+            { 
+                videoId = videoId,
+                customerId = customerId,
+                customerName = comment.CustomerName,
+                content = comment.Content,
+                createdAt = comment.CreatedAt,
+                message = "Bình luận thành công!"
+            });
         }
 
-        // GET: api/reels/{id}/comments?page=1
-        [HttpGet("{id}/comments")]
-        public async Task<IActionResult> GetComments(int id, [FromQuery] int page = 1)
+        // GET: api/reels/{videoId}/comments?page=1
+        [HttpGet("{videoId}/comments")]
+        public async Task<IActionResult> GetComments(int videoId, [FromQuery] int page = 1)
         {
             const int pageSize = 10;
 
             var comments = await _db.VideoComments
-                .Where(c => c.VideoId == id)
+                .Where(c => c.VideoId == videoId)
                 .OrderByDescending(c => c.CreatedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
+                .Select(c => new 
+                {
+                    c.VideoId,
+                    c.CustomerId,
+                    c.CustomerName,
+                    c.Content,
+                    c.CreatedAt
+                })
                 .ToListAsync();
 
             return Ok(comments);
         }
 
-        // POST: api/reels/{id}/share
-        [HttpPost("{id}/share")]
-        public async Task<IActionResult> ShareVideo(int id)
+        // DELETE: api/reels/{videoId}/comment/{customerId}
+        [HttpDelete("{videoId}/comment/{customerId}")]
+        [Authorize(Roles = "Customer")]
+        public async Task<IActionResult> DeleteComment(int videoId, int customerId)
         {
-            var video = await _db.ShortVideos.FindAsync(id);
+            var authenticatedUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(authenticatedUserId, out int userId) || userId != customerId)
+            {
+                return Unauthorized(new { message = "Bạn chỉ có thể xóa bình luận của chính mình." });
+            }
+
+            var comment = await _db.VideoComments
+                .FirstOrDefaultAsync(c => c.VideoId == videoId && c.CustomerId == customerId);
+
+            if (comment == null)
+            {
+                return NotFound(new { message = "Bình luận không tồn tại." });
+            }
+
+            _db.VideoComments.Remove(comment);
+            await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET CommentsCount = CommentsCount - 1 WHERE VideoId = {0}", videoId);
+            await _db.SaveChangesAsync();
+
+            return Ok(new { message = "Xóa bình luận thành công!" });
+        }
+
+        // POST: api/reels/{videoId}/share
+        [HttpPost("{videoId}/share")]
+        public async Task<IActionResult> ShareVideo(int videoId)
+        {
+            var video = await _db.ShortVideos.FindAsync(videoId);
             if (video == null)
             {
                 return NotFound(new { message = "Video không tồn tại." });
             }
 
-            await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Shares = Shares + 1 WHERE VideoId = {0}", id);
+            await _db.Database.ExecuteSqlRawAsync("UPDATE ShortVideos SET Shares = Shares + 1 WHERE VideoId = {0}", videoId);
             await _db.SaveChangesAsync();
 
             return Ok(new { message = "Chia sẻ video thành công!" });
@@ -276,7 +396,11 @@ namespace HakiBaVuong.Controllers
         [Authorize(Roles = "Customer")]
         public async Task<IActionResult> FollowBrand(int brandId)
         {
-            var customerId = int.Parse(User.FindFirst("CustomerId")!.Value);
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(customerIdClaim, out int customerId))
+            {
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
 
             var existing = await _db.BrandFollows
                 .FirstOrDefaultAsync(f => f.BrandId == brandId && f.CustomerId == customerId);
@@ -297,7 +421,11 @@ namespace HakiBaVuong.Controllers
         [Authorize(Roles = "Customer")]
         public async Task<IActionResult> UnfollowBrand(int brandId)
         {
-            var customerId = int.Parse(User.FindFirst("CustomerId")!.Value);
+            var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(customerIdClaim, out int customerId))
+            {
+                return Unauthorized(new { message = "Token không hợp lệ." });
+            }
 
             var existing = await _db.BrandFollows
                 .FirstOrDefaultAsync(f => f.BrandId == brandId && f.CustomerId == customerId);
@@ -382,13 +510,13 @@ namespace HakiBaVuong.Controllers
             return Ok(videos);
         }
 
-        // PUT: api/reels/{id}
-        [HttpPut("{id}")]
+        // PUT: api/reels/{videoId}
+        [HttpPut("{videoId}")]
         [Authorize(Roles = "Brand")]
-        public async Task<IActionResult> UpdateVideo(int id, [FromBody] UpdateVideoDTO dto)
+        public async Task<IActionResult> UpdateVideo(int videoId, [FromBody] UpdateVideoDTO dto)
         {
             var brandId = int.Parse(User.FindFirst("BrandId")!.Value);
-            var video = await _db.ShortVideos.FindAsync(id);
+            var video = await _db.ShortVideos.FindAsync(videoId);
 
             if (video == null)
             {
@@ -407,17 +535,17 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Cập nhật video thành công!" });
         }
 
-        // DELETE: api/reels/{id}
-        [HttpDelete("{id}")]
+        // DELETE: api/reels/{videoId}
+        [HttpDelete("{videoId}")]
         [Authorize(Roles = "Brand")]
-        public async Task<IActionResult> DeleteVideo(int id)
+        public async Task<IActionResult> DeleteVideo(int videoId)
         {
             var brandId = int.Parse(User.FindFirst("BrandId")!.Value);
             var video = await _db.ShortVideos
                 .Include(v => v.VideoProducts)
                 .Include(v => v.VideoLikes)
                 .Include(v => v.VideoComments)
-                .FirstOrDefaultAsync(v => v.VideoId == id);
+                .FirstOrDefaultAsync(v => v.VideoId == videoId);
 
             if (video == null)
             {
@@ -447,7 +575,7 @@ namespace HakiBaVuong.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting video files for VideoId={VideoId}", id);
+                _logger.LogError(ex, "Error deleting video files for VideoId={VideoId}", videoId);
             }
 
             _db.VideoProducts.RemoveRange(video.VideoProducts);
@@ -456,7 +584,7 @@ namespace HakiBaVuong.Controllers
             _db.ShortVideos.Remove(video);
             await _db.SaveChangesAsync();
 
-            _logger.LogInformation("Video deleted: VideoId={VideoId}, BrandId={BrandId}", id, brandId);
+            _logger.LogInformation("Video deleted: VideoId={VideoId}, BrandId={BrandId}", videoId, brandId);
             return Ok(new { message = "Xóa video thành công!" });
         }
 
@@ -491,13 +619,25 @@ namespace HakiBaVuong.Controllers
         {
             try
             {
-                var totalVideos = await _db.ShortVideos.CountAsync();
+                var accessibleBrandIds = await GetAccessibleBrandIdsAsync();
+
+                var totalVideosQuery = _db.ShortVideos.AsQueryable();
+                if (accessibleBrandIds != null)
+                    totalVideosQuery = totalVideosQuery.Where(v => accessibleBrandIds.Contains(v.BrandId));
+
+                var totalVideos = await totalVideosQuery.CountAsync();
                 var totalPages = (totalVideos + pageSize - 1) / pageSize;
 
-                var videos = await _db.ShortVideos
+                var videosQuery = _db.ShortVideos
                     .Include(v => v.Brand)
                     .Include(v => v.VideoProducts).ThenInclude(vp => vp.Product)
                     .OrderByDescending(v => v.CreatedAt)
+                    .AsQueryable();
+
+                if (accessibleBrandIds != null)
+                    videosQuery = videosQuery.Where(v => accessibleBrandIds.Contains(v.BrandId));
+
+                var videos = await videosQuery
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .Select(v => new
@@ -544,22 +684,26 @@ namespace HakiBaVuong.Controllers
             }
         }
 
-        // GET: api/reels/videos/{id} (Get single video by ID)
-        [HttpGet("videos/{id}")]
+        // GET: api/reels/videos/{videoId} (Get single video by ID)
+        [HttpGet("videos/{videoId}")]
         [Produces("application/json")]
-        public async Task<IActionResult> GetVideoById(int id)
+        public async Task<IActionResult> GetVideoById(int videoId)
         {
             try
             {
                 var video = await _db.ShortVideos
                     .Include(v => v.Brand)
                     .Include(v => v.VideoProducts).ThenInclude(vp => vp.Product)
-                    .FirstOrDefaultAsync(v => v.VideoId == id);
+                    .FirstOrDefaultAsync(v => v.VideoId == videoId);
 
                 if (video == null)
                 {
                     return NotFound(new { message = "Video không tồn tại." });
                 }
+
+                var accessibleBrandIds = await GetAccessibleBrandIdsAsync();
+                if (accessibleBrandIds != null && !accessibleBrandIds.Contains(video.BrandId))
+                    return Forbid();
 
                 var result = new
                 {
@@ -608,6 +752,10 @@ namespace HakiBaVuong.Controllers
                 {
                     return NotFound(new { message = "Brand không tồn tại." });
                 }
+
+                var accessibleBrandIds = await GetAccessibleBrandIdsAsync();
+                if (accessibleBrandIds != null && !accessibleBrandIds.Contains(brandId))
+                    return Forbid();
 
                 var totalVideos = await _db.ShortVideos
                     .Where(v => v.BrandId == brandId)
@@ -660,7 +808,48 @@ namespace HakiBaVuong.Controllers
                 return StatusCode(500, new { message = "Lỗi khi lấy danh sách videos.", error = ex.Message });
             }
         }
-    }
+
+        // GET: api/reels/brand/{brandId}/stats (Get brand video stats)
+        [HttpGet("brand/{brandId}/stats")]
+        public async Task<IActionResult> GetBrandStats(int brandId)
+        {
+            try
+            {
+                var brand = await _db.Brands.FindAsync(brandId);
+                if (brand == null)
+                {
+                    return NotFound(new { message = "Brand không tồn tại." });
+                }
+
+                var accessibleBrandIds = await GetAccessibleBrandIdsAsync();
+                if (accessibleBrandIds != null && !accessibleBrandIds.Contains(brandId))
+                    return Forbid();
+
+                var videos = await _db.ShortVideos
+                    .Where(v => v.BrandId == brandId)
+                    .ToListAsync();
+
+                var stats = new
+                {
+                    brandId,
+                    brandName = brand.Name,
+                    totalVideos = videos.Count,
+                    totalLikes = videos.Sum(v => v.Likes),
+                    totalComments = videos.Sum(v => v.CommentsCount),
+                    totalShares = videos.Sum(v => v.Shares),
+                    totalViews = videos.Sum(v => v.Views)
+                };
+
+                return Ok(stats);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching brand stats");
+                return StatusCode(500, new { message = "Lỗi khi lấy thống kê brand.", error = ex.Message });
+            }
+        }
+
+    } // end ShortVideoController
 
     // DTOs
     public class UploadVideoDTO
