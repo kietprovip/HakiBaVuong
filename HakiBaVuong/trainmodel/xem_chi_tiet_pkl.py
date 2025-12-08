@@ -1,4 +1,4 @@
-# xem_chi_tiet_pkl.py — copy vào 1 file rồi chạy
+
 import pickle
 
 with open('lightfm_model.pkl', 'rb') as f:

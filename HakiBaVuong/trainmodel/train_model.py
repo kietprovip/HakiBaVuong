@@ -1,4 +1,4 @@
-# train_model.py — ĐÃ SỬA ĐỂ CHẠY NGON TRÊN MÁY BOSS
+
 import pandas as pd
 from lightfm import LightFM
 from lightfm.data import Dataset
