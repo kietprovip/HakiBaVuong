@@ -7,8 +7,13 @@ using Microsoft.Extensions.FileProviders;
 using HakiBaVuong.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.OpenApi.Models;
+using Python.Runtime;
+using HakiBaVuong;
+
 
 var builder = WebApplication.CreateBuilder(args);
+
+
 
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 builder.Services.AddDbContext<DataContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -40,8 +45,7 @@ builder.Services.AddSwaggerGen(options =>
             new string[] { }
         }
     });
-    
-    // Thêm examples cho response
+
     options.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "HakiBaVuong API",
@@ -112,7 +116,10 @@ builder.Services.AddSession(options =>
     options.Cookie.SameSite = SameSiteMode.None;
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.None : CookieSecurePolicy.Always;
 });
+builder.Services.AddSingleton<RecommendationService>();
+
 var app = builder.Build();
+
 
 
 if (app.Environment.IsDevelopment())
