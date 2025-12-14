@@ -25,7 +25,7 @@ namespace HakiBaVuong.Controllers
 
             var gemini = config.GetSection("Gemini");
             var apiKey = gemini["ApiKey"] ?? throw new InvalidOperationException("Thiếu Gemini:ApiKey trong appsettings.json");
-            var model = gemini["Model"] ?? "gemini-2.0-flash-exp"; // Model mới nhất, hỗ trợ ảnh
+            var model = gemini["Model"] ?? "gemini-2.5-flash-exp";// Model mới nhất, hỗ trợ ảnh
             var baseUrl = gemini["BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1/models/";
             var endpoint = gemini["Endpoint"] ?? ":generateContent";
 
