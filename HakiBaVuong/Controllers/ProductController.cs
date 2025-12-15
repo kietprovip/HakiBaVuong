@@ -1049,83 +1049,189 @@ namespace HakiBaVuong.Controllers
             var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(customerIdClaim, out int customerId) ? customerId : null;
         }
-        [HttpPost("scan-barcode")]
-        public async Task<ActionResult<ProductDTO>> ScanBarcode([FromBody] ScanBarcodeDTO model)
-        {
-            if (string.IsNullOrWhiteSpace(model.Barcode))
-                return BadRequest(new { message = "Vui lòng quét hoặc nhập mã vạch!" });
 
-            _logger.LogInformation("Staff quét barcode: {Barcode}", model.Barcode);
+        [HttpPost("scan-and-create")]
+        // No [Authorize] - open endpoint for testing: call barcode API, create product and save to DB
+        public async Task<IActionResult> ScanAndCreate([FromBody] ScanBarcodeDTO model)
+        {
+            if (string.IsNullOrWhiteSpace(model?.Barcode))
+                return BadRequest(new { message = "Vui lòng cung cấp barcode trong body (Barcode property)." });
+
+            _logger.LogInformation("ScanAndCreate called for barcode: {Barcode}, requested BrandId: {BrandId}", model.Barcode, model.BrandId);
 
             var baseUrl = _config["BarcodeApi:BaseUrl"];
             var apiKey = _config["BarcodeApi:Key"];
-            var url = $"{baseUrl}?barcode={model.Barcode}&formatted=y&key={apiKey}";
+            var url = $"{baseUrl}?barcode={System.Net.WebUtility.UrlEncode(model.Barcode)}&formatted=y&key={apiKey}";
 
             try
             {
                 var response = await _httpClient.GetAsync(url);
                 if (!response.IsSuccessStatusCode)
-                    return NotFound(new { message = "Không tìm thấy sản phẩm với mã vạch này!" });
+                {
+                    var err = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("Barcode API returned non-success: {Status} - {Body}", response.StatusCode, err);
+                    return StatusCode((int)response.StatusCode, new { message = "Không tìm thấy thông tin sản phẩm từ API barcode.", details = err });
+                }
 
                 var json = await response.Content.ReadAsStringAsync();
-                var data = JsonDocument.Parse(json);
-
+                using var data = JsonDocument.Parse(json);
                 if (!data.RootElement.TryGetProperty("products", out var products) || products.GetArrayLength() == 0)
                     return NotFound(new { message = "Không tìm thấy thông tin sản phẩm!" });
 
                 var item = products[0];
 
-                var title = item.TryGetProperty("title", out var t) ? t.GetString() : "Sản phẩm không tên";
-                var brand = item.TryGetProperty("brand", out var b) ? b.GetString() : null;
+                var title = item.TryGetProperty("title", out var t) ? t.GetString() : null;
+                var brandName = item.TryGetProperty("brand", out var b) ? b.GetString() : null;
                 var manufacturer = item.TryGetProperty("manufacturer", out var m) ? m.GetString() : null;
                 var category = item.TryGetProperty("category", out var c) ? c.GetString() : null;
                 var description = item.TryGetProperty("description", out var d) ? d.GetString() : null;
 
+                var finalDescription = string.Join("\n\n", new[] { category, brandName ?? manufacturer, description }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
-                var descBuilder = new List<string>();
-
-                if (!string.IsNullOrWhiteSpace(category))
-                    descBuilder.Add($"Danh mục: {category}");
-
-                var brandName = brand ?? manufacturer ?? "Không xác định";
-                descBuilder.Add($"Thương hiệu: {brandName}");
-
-                if (!string.IsNullOrWhiteSpace(description))
-                    descBuilder.Add(description);
-
-                var finalDescription = descBuilder.Any()
-                    ? string.Join("\n\n", descBuilder)
-                    : "Không có mô tả chi tiết.";
-
-                var imageUrl = "";
-                if (item.TryGetProperty("images", out var imgs) && imgs.GetArrayLength() > 0)
+                Brand brand = null;
+                if (model.BrandId.HasValue)
                 {
-                    imageUrl = imgs[0].GetString() ?? "";
+                    brand = await _context.Brands.FindAsync(model.BrandId.Value);
+                    if (brand == null)
+                    {
+                        _logger.LogWarning("Provided BrandId {BrandId} not found.", model.BrandId.Value);
+                        return BadRequest(new { message = "BrandId được cung cấp không tồn tại." });
+                    }
+                }
+                else
+                {
+                    // Ensure we have a Brand to assign. Try to find an existing brand; if none, create a simple one referencing an existing or new user.
+                    brand = await _context.Brands.FirstOrDefaultAsync();
+                    if (brand == null)
+                    {
+                        var user = await _context.Users.FirstOrDefaultAsync();
+                        if (user == null)
+                        {
+                            user = new User
+                            {
+                                Name = "ImportedUser",
+                                Email = $"importer_{Guid.NewGuid():N}@local",
+                                Password = "importer",
+                                Role = "User",
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+                            _context.Users.Add(user);
+                            await _context.SaveChangesAsync();
+                            _logger.LogInformation("Created placeholder user for import with id {UserId}", user.UserId);
+                        }
+
+                        brand = new Brand
+                        {
+                            Name = !string.IsNullOrWhiteSpace(brandName) ? brandName : "Imported Brand",
+                            OwnerId = user.UserId,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.Brands.Add(brand);
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation("Created placeholder brand for import with id {BrandId}", brand.BrandId);
+                    }
                 }
 
-                var result = new ProductDTO
+                // Download first image if available
+                string imageUrl = null;
+                if (item.TryGetProperty("images", out var imgs) && imgs.ValueKind == JsonValueKind.Array && imgs.GetArrayLength() > 0)
                 {
-                    Name = title?.Trim() ?? "Sản phẩm không tên",
-                    Description = finalDescription.Trim(),
-                    PriceSell = 0,
-                    PriceCost = 0,
-                    Image = imageUrl,
-                    CategoryIds = new List<int>(),
-                    Rating = 5.0f
+                    imageUrl = imgs[0].GetString();
+                }
+
+                string savedImagePath = null;
+                if (!string.IsNullOrWhiteSpace(imageUrl))
+                {
+                    try
+                    {
+                        var imgResp = await _httpClient.GetAsync(imageUrl);
+                        if (imgResp.IsSuccessStatusCode)
+                        {
+                            var bytes = await imgResp.Content.ReadAsByteArrayAsync();
+                            // Determine extension
+                            var ext = Path.GetExtension(new Uri(imageUrl).LocalPath);
+                            if (string.IsNullOrEmpty(ext))
+                            {
+                                var ct = imgResp.Content.Headers.ContentType?.MediaType ?? "";
+                                ext = ct switch
+                                {
+                                    "image/png" => ".png",
+                                    "image/jpeg" => ".jpg",
+                                    "image/gif" => ".gif",
+                                    _ => ".jpg"
+                                };
+                            }
+
+                            var uploadsFolder = Path.Combine(_environment.ContentRootPath, "Images");
+                            if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
+
+                            var fileName = $"barcode_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid()}{ext}";
+                            var filePath = Path.Combine(uploadsFolder, fileName);
+                            await System.IO.File.WriteAllBytesAsync(filePath, bytes);
+                            savedImagePath = $"/Images/{fileName}";
+                            _logger.LogInformation("Downloaded and saved image for barcode to {Path}", savedImagePath);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Failed to download image from {Url} - status {Status}", imageUrl, imgResp.StatusCode);
+                        }
+                    }
+                    catch (Exception exImg)
+                    {
+                        _logger.LogWarning(exImg, "Exception when downloading image {Url}", imageUrl);
+                    }
+                }
+
+                var product = new Product
+                {
+                    BrandId = brand.BrandId,
+                    Name = (title ?? "Imported product").Trim(),
+                    Description = string.IsNullOrWhiteSpace(finalDescription) ? (description ?? "") : finalDescription,
+                    PriceSell = 99999999m,
+                    PriceCost = 99999999m,
+                    Image = savedImagePath ?? string.Empty,
+                    Rating = 5.0f,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 };
 
-                return Ok(new
+                _context.Products.Add(product);
+                await _context.SaveChangesAsync();
+
+                var inventory = new Inventory
                 {
-                    message = "Quét thành công! Vui lòng kiểm tra thông tin và bấm Lưu để thêm sản phẩm.",
-                    product = result
-                });
+                    ProductId = product.ProductId,
+                    StockQuantity = 0,
+                    LastUpdated = DateTime.UtcNow
+                };
+                _context.Inventories.Add(inventory);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Imported product {ProductId} from barcode {Barcode} assigned to BrandId {BrandId}", product.ProductId, model.Barcode, brand.BrandId);
+
+                var productDtoResponse = new ProductDTO
+                {
+                    ProductId = product.ProductId,
+                    BrandId = product.BrandId,
+                    Name = product.Name,
+                    Description = product.Description,
+                    PriceSell = product.PriceSell,
+                    PriceCost = product.PriceCost ?? 0,
+                    Rating = product.Rating,
+                    CreatedAt = product.CreatedAt,
+                    UpdatedAt = product.UpdatedAt,
+                    Image = product.Image,
+                    CategoryIds = new List<int>()
+                };
+
+                return CreatedAtAction(nameof(GetById), new { id = product.ProductId }, new { message = "Đã thêm sản phẩm từ barcode.", product = productDtoResponse });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Lỗi khi quét barcode: {Barcode}", model.Barcode);
-                return StatusCode(500, new { message = "Lỗi hệ thống. Vui lòng thử lại!" });
+                _logger.LogError(ex, "Error in ScanAndCreate for barcode: {Barcode}", model.Barcode);
+                return StatusCode(500, new { message = "Lỗi khi import sản phẩm từ barcode." });
             }
         }
-
     }
 }
