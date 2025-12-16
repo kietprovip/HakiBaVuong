@@ -347,7 +347,8 @@ public class CustomerAuthController : ControllerBase
             Subject = new ClaimsIdentity(new Claim[]
             {
                 new Claim(ClaimTypes.NameIdentifier, customer.CustomerId.ToString()),
-                new Claim(ClaimTypes.Email, customer.Email)
+                new Claim(ClaimTypes.Email, customer.Email),
+                new Claim(ClaimTypes.Role, "Customer")
             }),
             Expires = DateTime.UtcNow.AddHours(3),
             Issuer = _config["Jwt:Issuer"],

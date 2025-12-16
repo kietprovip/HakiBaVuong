@@ -32,6 +32,8 @@ namespace HakiBaVuong.Data
         public DbSet<VideoProduct> VideoProducts { get; set; } = null!;
         public DbSet<VideoLike> VideoLikes { get; set; } = null!;
         public DbSet<VideoComment> VideoComments { get; set; } = null!;
+        public DbSet<VideoView> VideoViews { get; set; } = null!;
+        public DbSet<VideoShare> VideoShares { get; set; } = null!;
         public DbSet<BrandFollow> BrandFollows { get; set; } = null!;
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -207,9 +209,44 @@ namespace HakiBaVuong.Data
             modelBuilder.Entity<VideoLike>()
                 .HasKey(vl => new { vl.VideoId, vl.CustomerId });
 
+            modelBuilder.Entity<VideoComment>()
+                .HasOne(vc => vc.Video)
+                .WithMany(v => v.VideoComments)
+                .HasForeignKey(vc => vc.VideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<VideoView>()
+                .HasKey(vv => new { vv.VideoId, vv.CustomerId });
+
+            modelBuilder.Entity<VideoView>()
+                .HasOne(vv => vv.Video)
+                .WithMany(v => v.VideoViews)
+                .HasForeignKey(vv => vv.VideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<VideoView>()
+                .HasOne(vv => vv.Customer)
+                .WithMany()
+                .HasForeignKey(vv => vv.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<VideoShare>()
+                .HasKey(vs => new { vs.VideoId, vs.CustomerId });
+
+            modelBuilder.Entity<VideoShare>()
+                .HasOne(vs => vs.Video)
+                .WithMany(v => v.VideoShares)
+                .HasForeignKey(vs => vs.VideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<VideoShare>()
+                .HasOne(vs => vs.Customer)
+                .WithMany()
+                .HasForeignKey(vs => vs.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             modelBuilder.Entity<BrandFollow>()
                 .HasKey(bf => new { bf.BrandId, bf.CustomerId });
-
             base.OnModelCreating(modelBuilder);
         }
     }
