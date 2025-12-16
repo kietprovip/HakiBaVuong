@@ -6,6 +6,7 @@ using System.Text;
 using Microsoft.Extensions.FileProviders;
 using HakiBaVuong.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,7 +14,41 @@ builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnC
 builder.Services.AddDbContext<DataContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddHttpClient();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        Description = "Nhập JWT token của bạn ở đây. Ví dụ: eyJhbGciOiJIUzI1NiIs..."
+    });
+    
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            new string[] { }
+        }
+    });
+    
+    // Thêm examples cho response
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "HakiBaVuong API",
+        Version = "v1",
+        Description = "API for Short Video Management"
+    });
+});
 builder.Services.AddAutoMapper(typeof(Program).Assembly);
 
 
@@ -21,7 +56,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "https://b1d5-14-167-171-205.ngrok-free.app")
+        policy.WithOrigins("http://localhost:5173", "http://localhost:5174", "https://b1d5-14-167-171-205.ngrok-free.app")
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
@@ -68,6 +103,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 builder.Services.AddDistributedMemoryCache();
+builder.Services.AddMemoryCache();
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromHours(1);
@@ -76,6 +112,7 @@ builder.Services.AddSession(options =>
     options.Cookie.SameSite = SameSiteMode.None;
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.None : CookieSecurePolicy.Always;
 });
+builder.Services.AddSingleton<RecommendationService>();
 var app = builder.Build();
 
 
@@ -90,6 +127,20 @@ app.UseFileServer(new FileServerOptions
     FileProvider = new PhysicalFileProvider(
         Path.Combine(builder.Environment.ContentRootPath, "Images")),
     RequestPath = "/images",
+    EnableDirectoryBrowsing = false
+});
+app.UseFileServer(new FileServerOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.ContentRootPath, "Uploads", "videos")),
+    RequestPath = "/Uploads/videos",
+    EnableDirectoryBrowsing = false
+});
+app.UseFileServer(new FileServerOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.ContentRootPath, "Uploads", "thumbnails")),
+    RequestPath = "/Uploads/thumbnails",
     EnableDirectoryBrowsing = false
 });
 app.UseCors("AllowReactApp");

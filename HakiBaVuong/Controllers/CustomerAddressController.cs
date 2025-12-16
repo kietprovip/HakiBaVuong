@@ -44,6 +44,8 @@ namespace HakiBaVuong.Controllers
                     FullName = a.FullName,
                     Phone = a.Phone,
                     Address = a.Address,
+                    Latitude = a.Latitude,
+                    Longitude = a.Longitude,
                     IsDefault = a.IsDefault
                 })
                 .ToListAsync();
@@ -73,6 +75,8 @@ namespace HakiBaVuong.Controllers
                     FullName = a.FullName,
                     Phone = a.Phone,
                     Address = a.Address,
+                    Latitude = a.Latitude,
+                    Longitude = a.Longitude,
                     IsDefault = a.IsDefault
                 })
                 .FirstOrDefaultAsync();
@@ -110,6 +114,8 @@ namespace HakiBaVuong.Controllers
                 FullName = model.FullName,
                 Phone = model.Phone,
                 Address = model.Address,
+                Latitude = model.Latitude,
+                Longitude = model.Longitude,
                 IsDefault = model.IsDefault
             };
 
@@ -134,6 +140,8 @@ namespace HakiBaVuong.Controllers
                 FullName = address.FullName,
                 Phone = address.Phone,
                 Address = address.Address,
+                Latitude = address.Latitude,
+                Longitude = address.Longitude,
                 IsDefault = address.IsDefault
             };
 
@@ -171,6 +179,8 @@ namespace HakiBaVuong.Controllers
             address.FullName = model.FullName;
             address.Phone = model.Phone;
             address.Address = model.Address;
+            address.Latitude = model.Latitude;
+            address.Longitude = model.Longitude;
             address.IsDefault = model.IsDefault;
 
             if (model.IsDefault)

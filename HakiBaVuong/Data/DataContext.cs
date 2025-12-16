@@ -25,7 +25,14 @@ namespace HakiBaVuong.Data
         public DbSet<Revenue> Revenues { get; set; }
         public DbSet<RevenueHistory> RevenueHistories { get; set; }
         public DbSet<Wishlist> Wishlists { get; set; }
-
+        public DbSet<Shipper> Shippers { get; set; }
+        public DbSet<ShipperRating> ShipperRatings { get; set; }
+        public DbSet<ShipperLocation> ShipperLocations { get; set; } = null!;
+        public DbSet<ShortVideo> ShortVideos { get; set; } = null!;
+        public DbSet<VideoProduct> VideoProducts { get; set; } = null!;
+        public DbSet<VideoLike> VideoLikes { get; set; } = null!;
+        public DbSet<VideoComment> VideoComments { get; set; } = null!;
+        public DbSet<BrandFollow> BrandFollows { get; set; } = null!;
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Product>()
@@ -184,6 +191,24 @@ namespace HakiBaVuong.Data
                 .WithMany()
                 .HasForeignKey(rh => rh.BrandId)
                 .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<VideoProduct>()
+                .HasOne(vp => vp.Video)
+                .WithMany(v => v.VideoProducts)
+                .HasForeignKey(vp => vp.VideoId)
+                .OnDelete(DeleteBehavior.Cascade); 
+
+            modelBuilder.Entity<VideoProduct>()
+                .HasOne(vp => vp.Product)
+                .WithMany() 
+                .HasForeignKey(vp => vp.ProductId)
+                .OnDelete(DeleteBehavior.NoAction); 
+
+
+            modelBuilder.Entity<VideoLike>()
+                .HasKey(vl => new { vl.VideoId, vl.CustomerId });
+
+            modelBuilder.Entity<BrandFollow>()
+                .HasKey(bf => new { bf.BrandId, bf.CustomerId });
 
             base.OnModelCreating(modelBuilder);
         }

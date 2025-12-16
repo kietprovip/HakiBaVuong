@@ -7,6 +7,8 @@ using HakiBaVuong.Data;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using System.Net.Http;
+using System.Text.Json;
 //BE mới
 namespace HakiBaVuong.Controllers
 {
@@ -14,15 +16,19 @@ namespace HakiBaVuong.Controllers
     [ApiController]
     public class ProductController : ControllerBase
     {
+        private readonly IConfiguration _config;
         private readonly DataContext _context;
         private readonly ILogger<ProductController> _logger;
         private readonly IWebHostEnvironment _environment;
+        private readonly HttpClient _httpClient;
 
-        public ProductController(DataContext context, ILogger<ProductController> logger, IWebHostEnvironment environment)
+        public ProductController(DataContext context, ILogger<ProductController> logger, IWebHostEnvironment environment, HttpClient httpClient, IConfiguration config)
         {
             _context = context;
             _logger = logger;
             _environment = environment;
+            _httpClient = httpClient;
+            _config = config;
         }
 
         [HttpGet]
@@ -879,7 +885,6 @@ namespace HakiBaVuong.Controllers
         }
 
         [HttpGet("home")]
-        [Authorize]
         public async Task<ActionResult<IEnumerable<ProductDTO>>> GetHomeRecommendations()
         {
             _logger.LogInformation("GetHomeRecommendations called");
@@ -887,25 +892,14 @@ namespace HakiBaVuong.Controllers
             var customerId = GetCustomerId();
             if (customerId == null)
             {
-                _logger.LogWarning("Invalid customerId from token");
-                return Unauthorized(new { message = "Token không hợp lệ." });
-            }
+                _logger.LogInformation("No customerId provided, returning popular products");
 
-            var viewedProducts = await _context.ViewedProducts
-                .Where(vp => vp.CustomerId == customerId)
-                .Select(vp => vp.ProductId)
-                .ToListAsync();
-
-            var query = _context.Products
-                .Include(p => p.Brand)
-                .Include(p => p.ProductCategories)
-                .ThenInclude(pc => pc.Category)
-                .AsQueryable();
-
-            var recommendedByViewed = viewedProducts.Any()
-                ? await query.Where(p => viewedProducts.Contains(p.ProductId))
+                var popularProducts = await _context.Products
+                    .Include(p => p.Brand)
+                    .Include(p => p.ProductCategories)
+                    .ThenInclude(pc => pc.Category)
                     .OrderByDescending(p => p.Rating)
-                    .Take(3)
+                    .Take(9)
                     .Select(p => new ProductDTO
                     {
                         ProductId = p.ProductId,
@@ -920,26 +914,29 @@ namespace HakiBaVuong.Controllers
                         Image = p.Image,
                         CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                     })
-                    .ToListAsync()
-                : new List<ProductDTO>();
+                    .ToListAsync();
 
-            var viewedProductsWithCategories = await _context.ViewedProducts
+                _logger.LogInformation("Retrieved {Count} popular products", popularProducts.Count);
+                return Ok(popularProducts);
+            }
+
+            var viewedProducts = await _context.ViewedProducts
                 .Where(vp => vp.CustomerId == customerId)
                 .Include(vp => vp.Product)
                 .ThenInclude(p => p.ProductCategories)
                 .ThenInclude(pc => pc.Category)
                 .ToListAsync();
 
-            var viewedCategories = viewedProductsWithCategories
-                .SelectMany(vp => vp.Product.ProductCategories)
-                .Select(pc => pc.CategoryId)
-                .Distinct()
-                .ToList();
+            if (!viewedProducts.Any())
+            {
+                _logger.LogInformation("No viewed products found for customer {CustomerId}, returning popular products", customerId);
 
-            var recommendedByCategory = viewedCategories.Any()
-                ? await query.Where(p => p.ProductCategories.Any(pc => viewedCategories.Contains(pc.CategoryId)) && !viewedProducts.Contains(p.ProductId))
+                var popularProducts = await _context.Products
+                    .Include(p => p.Brand)
+                    .Include(p => p.ProductCategories)
+                    .ThenInclude(pc => pc.Category)
                     .OrderByDescending(p => p.Rating)
-                    .Take(3)
+                    .Take(9)
                     .Select(p => new ProductDTO
                     {
                         ProductId = p.ProductId,
@@ -954,46 +951,40 @@ namespace HakiBaVuong.Controllers
                         Image = p.Image,
                         CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
                     })
-                    .ToListAsync()
-                : new List<ProductDTO>();
+                    .ToListAsync();
 
-            var viewedBrands = await _context.ViewedProducts
-                .Where(vp => vp.CustomerId == customerId)
-                .Include(vp => vp.Product)
-                .Select(vp => vp.Product.BrandId)
-                .Distinct()
+                _logger.LogInformation("Retrieved {Count} popular products", popularProducts.Count);
+                return Ok(popularProducts);
+            }
+
+            var randomViewedProduct = viewedProducts.OrderBy(x => Guid.NewGuid()).First();
+            var categoryIds = randomViewedProduct.Product.ProductCategories.Select(pc => pc.CategoryId).ToList();
+
+            var recommendedProducts = await _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .Where(p => p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId)))
+                .OrderByDescending(p => p.Rating)
+                .Take(9)
+                .Select(p => new ProductDTO
+                {
+                    ProductId = p.ProductId,
+                    BrandId = p.BrandId,
+                    Name = p.Name,
+                    Description = p.Description,
+                    PriceSell = p.PriceSell,
+                    PriceCost = p.PriceCost,
+                    Rating = p.Rating,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    Image = p.Image,
+                    CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
+                })
                 .ToListAsync();
 
-            var recommendedByBrand = viewedBrands.Any()
-                ? await query.Where(p => viewedBrands.Contains(p.BrandId) && !viewedProducts.Contains(p.ProductId))
-                    .OrderByDescending(p => p.Rating)
-                    .Take(3)
-                    .Select(p => new ProductDTO
-                    {
-                        ProductId = p.ProductId,
-                        BrandId = p.BrandId,
-                        Name = p.Name,
-                        Description = p.Description,
-                        PriceSell = p.PriceSell,
-                        PriceCost = p.PriceCost,
-                        Rating = p.Rating,
-                        CreatedAt = p.CreatedAt,
-                        UpdatedAt = p.UpdatedAt,
-                        Image = p.Image,
-                        CategoryIds = p.ProductCategories.Select(pc => pc.CategoryId).ToList()
-                    })
-                    .ToListAsync()
-                : new List<ProductDTO>();
-
-            var allRecommendations = recommendedByViewed
-                .Concat(recommendedByCategory)
-                .Concat(recommendedByBrand)
-                .DistinctBy(p => p.ProductId)
-                .Take(9)
-                .ToList();
-
-            _logger.LogInformation("Retrieved {Count} home recommendations for customer {CustomerId}", allRecommendations.Count, customerId);
-            return Ok(allRecommendations);
+            _logger.LogInformation("Retrieved {Count} recommended products for customer {CustomerId} based on viewed product categories", recommendedProducts.Count, customerId);
+            return Ok(recommendedProducts);
         }
 
         [HttpPost("{productId}/view")]
@@ -1057,6 +1048,83 @@ namespace HakiBaVuong.Controllers
         {
             var customerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(customerIdClaim, out int customerId) ? customerId : null;
+        }
+        [HttpPost("scan-barcode")]
+        public async Task<ActionResult<ProductDTO>> ScanBarcode([FromBody] ScanBarcodeDTO model)
+        {
+            if (string.IsNullOrWhiteSpace(model.Barcode))
+                return BadRequest(new { message = "Vui lòng quét hoặc nhập mã vạch!" });
+
+            _logger.LogInformation("Staff quét barcode: {Barcode}", model.Barcode);
+
+            var baseUrl = _config["BarcodeApi:BaseUrl"];
+            var apiKey = _config["BarcodeApi:Key"];
+            var url = $"{baseUrl}?barcode={model.Barcode}&formatted=y&key={apiKey}";
+
+            try
+            {
+                var response = await _httpClient.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                    return NotFound(new { message = "Không tìm thấy sản phẩm với mã vạch này!" });
+
+                var json = await response.Content.ReadAsStringAsync();
+                var data = JsonDocument.Parse(json);
+
+                if (!data.RootElement.TryGetProperty("products", out var products) || products.GetArrayLength() == 0)
+                    return NotFound(new { message = "Không tìm thấy thông tin sản phẩm!" });
+
+                var item = products[0];
+
+                var title = item.TryGetProperty("title", out var t) ? t.GetString() : "Sản phẩm không tên";
+                var brand = item.TryGetProperty("brand", out var b) ? b.GetString() : null;
+                var manufacturer = item.TryGetProperty("manufacturer", out var m) ? m.GetString() : null;
+                var category = item.TryGetProperty("category", out var c) ? c.GetString() : null;
+                var description = item.TryGetProperty("description", out var d) ? d.GetString() : null;
+
+
+                var descBuilder = new List<string>();
+
+                if (!string.IsNullOrWhiteSpace(category))
+                    descBuilder.Add($"Danh mục: {category}");
+
+                var brandName = brand ?? manufacturer ?? "Không xác định";
+                descBuilder.Add($"Thương hiệu: {brandName}");
+
+                if (!string.IsNullOrWhiteSpace(description))
+                    descBuilder.Add(description);
+
+                var finalDescription = descBuilder.Any()
+                    ? string.Join("\n\n", descBuilder)
+                    : "Không có mô tả chi tiết.";
+
+                var imageUrl = "";
+                if (item.TryGetProperty("images", out var imgs) && imgs.GetArrayLength() > 0)
+                {
+                    imageUrl = imgs[0].GetString() ?? "";
+                }
+
+                var result = new ProductDTO
+                {
+                    Name = title?.Trim() ?? "Sản phẩm không tên",
+                    Description = finalDescription.Trim(),
+                    PriceSell = 0,
+                    PriceCost = 0,
+                    Image = imageUrl,
+                    CategoryIds = new List<int>(),
+                    Rating = 5.0f
+                };
+
+                return Ok(new
+                {
+                    message = "Quét thành công! Vui lòng kiểm tra thông tin và bấm Lưu để thêm sản phẩm.",
+                    product = result
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi quét barcode: {Barcode}", model.Barcode);
+                return StatusCode(500, new { message = "Lỗi hệ thống. Vui lòng thử lại!" });
+            }
         }
 
     }

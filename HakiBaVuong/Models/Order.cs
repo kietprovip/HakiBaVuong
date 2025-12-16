@@ -15,6 +15,10 @@ namespace HakiBaVuong.Models
         public string Phone { get; set; }
         public string Address { get; set; }
 
+        public decimal? Latitude { get; set; }
+
+        public decimal? Longitude { get; set; }
+
         [Required]
         public string Status { get; set; }
 
@@ -41,5 +45,9 @@ namespace HakiBaVuong.Models
         public virtual Payment Payment { get; set; }
 
         public virtual ICollection<OrderItem> OrderItems { get; set; }
+        public int? ShipperId { get; set; }
+
+        [ForeignKey("ShipperId")]
+        public virtual Shipper? Shipper { get; set; }
     }
 }

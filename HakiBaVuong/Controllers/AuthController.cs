@@ -125,8 +125,8 @@ public class AuthController : ControllerBase
         user.Password = BCrypt.Net.BCrypt.EnhancedHashPassword(model.Password);
         user.CreatedAt = DateTime.UtcNow;
         user.IsEmailVerified = false;
-        user.Role = "Staff";
-        user.BrandId = null;
+        user.Role = "Staff";  // Mặc định là Staff (chứ không phải Brand)
+        user.BrandId = null;  // Sẽ được gán sau khi xác thực email
 
         try
         {
@@ -178,6 +178,7 @@ public class AuthController : ControllerBase
         }
 
         user.IsEmailVerified = true;
+
         _context.Users.Update(user);
         await _cache.RemoveAsync($"RegisterOTP_{model.Email}");
         await _context.SaveChangesAsync();
@@ -191,7 +192,10 @@ public class AuthController : ControllerBase
     {
         _logger.LogInformation("Đăng nhập được gọi cho email: {Email}", model.Email);
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
+        var user = await _context.Users
+            .Include(u => u.Brand)
+            .FirstOrDefaultAsync(u => u.Email == model.Email);
+        
         if (user == null || !BCrypt.Net.BCrypt.EnhancedVerify(model.Password, user.Password))
         {
             _logger.LogWarning("Thông tin đăng nhập không hợp lệ cho email: {Email}", model.Email);
@@ -205,7 +209,9 @@ public class AuthController : ControllerBase
         }
 
         var token = GenerateJwtToken(user);
-        _logger.LogInformation("Đăng nhập thành công cho email: {Email}", model.Email);
+        _logger.LogInformation("Đăng nhập thành công cho email: {Email}, Role: {Role}, BrandId: {BrandId}", 
+            user.Email, user.Role, user.BrandId);
+        
         return Ok(new
         {
             message = "Đăng nhập thành công.",

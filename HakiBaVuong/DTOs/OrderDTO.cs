@@ -8,6 +8,8 @@
         public string FullName { get; set; }
         public string Phone { get; set; }
         public string Address { get; set; }
+        public decimal? Latitude { get; set; }
+        public decimal? Longitude { get; set; }
         public string Status { get; set; }
         public string DeliveryStatus { get; set; }
         public DateTime? EstimatedDeliveryDate { get; set; }
@@ -16,6 +18,8 @@
         public DateTime CreatedAt { get; set; }
         public List<OrderItemDTO> OrderItems { get; set; }
         public PaymentDTO Payment { get; set; }
+        public string? ShipperName { get; set; }
+        public string? ShipperPhone { get; set; }
     }
 
     public class PaymentDTO

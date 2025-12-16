@@ -48,6 +48,8 @@ namespace HakiBaVuong.Controllers
                 model.FullName = address.FullName;
                 model.Phone = address.Phone;
                 model.Address = address.Address;
+                model.Latitude = address.Latitude;
+                model.Longitude = address.Longitude;
             }
             else
             {
@@ -113,6 +115,8 @@ namespace HakiBaVuong.Controllers
                     FullName = model.FullName,
                     Phone = model.Phone,
                     Address = model.Address,
+                    Latitude = model.Latitude,
+                    Longitude = model.Longitude,
                     Status = model.PaymentMethod == "BankCard" ? "Chờ thanh toán" : "Chưa thanh toán",
                     DeliveryStatus = "Đợi giao hàng",
                     TotalAmount = totalAmount,
@@ -319,6 +323,8 @@ namespace HakiBaVuong.Controllers
                     FullName = order.FullName,
                     Phone = order.Phone,
                     Address = order.Address,
+                    Latitude = order.Latitude,
+                    Longitude = order.Longitude,
                     Status = order.Status,
                     DeliveryStatus = order.DeliveryStatus,
                     EstimatedDeliveryDate = order.EstimatedDeliveryDate,
@@ -387,6 +393,8 @@ namespace HakiBaVuong.Controllers
                 FullName = order.FullName,
                 Phone = order.Phone,
                 Address = order.Address,
+                Latitude = order.Latitude,
+                Longitude = order.Longitude,
                 Status = order.Status,
                 DeliveryStatus = order.DeliveryStatus,
                 EstimatedDeliveryDate = order.EstimatedDeliveryDate,
@@ -456,6 +464,8 @@ namespace HakiBaVuong.Controllers
                 FullName = o.FullName,
                 Phone = o.Phone,
                 Address = o.Address,
+                Latitude = o.Latitude,
+                Longitude = o.Longitude,
                 Status = o.Status,
                 DeliveryStatus = o.DeliveryStatus,
                 EstimatedDeliveryDate = o.EstimatedDeliveryDate,
@@ -533,6 +543,8 @@ namespace HakiBaVuong.Controllers
                 FullName = o.FullName,
                 Phone = o.Phone,
                 Address = o.Address,
+                Latitude = o.Latitude,
+                Longitude = o.Longitude,
                 Status = o.Status,
                 DeliveryStatus = o.DeliveryStatus,
                 EstimatedDeliveryDate = o.EstimatedDeliveryDate,
@@ -720,6 +732,8 @@ namespace HakiBaVuong.Controllers
                 FullName = order.FullName,
                 Phone = order.Phone,
                 Address = order.Address,
+                Latitude = order.Latitude,
+                Longitude = order.Longitude,
                 Status = order.Status,
                 DeliveryStatus = order.DeliveryStatus,
                 EstimatedDeliveryDate = order.EstimatedDeliveryDate,
@@ -796,7 +810,7 @@ namespace HakiBaVuong.Controllers
                 _context.Payments.Remove(order.Payment);
             }
 
-            // Remove related Revenue
+           
             var revenue = await _context.Revenues.FirstOrDefaultAsync(r => r.OrderId == id);
             if (revenue != null)
             {
@@ -820,6 +834,41 @@ namespace HakiBaVuong.Controllers
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(userIdClaim, out int userId) ? userId : null;
+        }
+        [HttpGet("{orderId}/tracking")]
+        [Authorize] 
+        public async Task<IActionResult> GetTracking(int orderId)
+        {
+            var customerId = GetCustomerId();
+            var order = await _context.Orders
+                .Include(o => o.Shipper)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId && o.CustomerId == customerId);
+
+            if (order == null || order.ShipperId == null || order.DeliveryStatus != "Đang giao")
+                return NotFound(new { message = "Đơn hàng chưa được giao hoặc không tồn tại." });
+
+            var location = await _context.ShipperLocations
+                .Where(l => l.ShipperId == order.ShipperId)
+                .Select(l => new { l.Latitude, l.Longitude, l.UpdatedAt })
+                .FirstOrDefaultAsync();
+
+            var customerLocation = new { Latitude = 0m, Longitude = 0m }; 
+
+            return Ok(new
+            {
+                orderId = order.OrderId,
+                deliveryStatus = order.DeliveryStatus,
+                shipper = new
+                {
+                    name = order.Shipper.Name,
+                    phone = order.Shipper.Phone,
+                    vehicle = order.Shipper.VehicleType,
+                    licensePlate = order.Shipper.LicensePlate
+                },
+                shipperLocation = location ?? new { Latitude = 0m, Longitude = 0m, UpdatedAt = DateTime.UtcNow },
+                customerLocation,
+                estimatedMinutes = 15 
+            });
         }
     }
 }
