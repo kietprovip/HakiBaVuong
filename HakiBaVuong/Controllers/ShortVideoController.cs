@@ -31,7 +31,7 @@ namespace HakiBaVuong.Controllers
             _logger = logger;
         }
 
-        // GET: api/reels/feed?page=1&customerId=123
+
         [HttpGet("feed")]
         public async Task<IActionResult> GetFeed([FromQuery] int page = 1, [FromQuery] int? customerId = null)
         {
@@ -73,7 +73,7 @@ namespace HakiBaVuong.Controllers
             return Ok(videos);
         }
 
-        // POST: api/reels/upload (Main endpoint - ANY BRAND, NO AUTH REQUIRED)
+
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> Upload([FromForm] UploadVideoDTO dto)
@@ -82,7 +82,7 @@ namespace HakiBaVuong.Controllers
             {
                 _logger.LogInformation("Upload request for BrandId={BrandId}", dto.BrandId);
 
-                // ===== VALIDATE BRAND EXISTS =====
+
                 var brand = await _db.Brands.FirstOrDefaultAsync(b => b.BrandId == dto.BrandId);
                 if (brand == null)
                 {
@@ -90,7 +90,7 @@ namespace HakiBaVuong.Controllers
                     return BadRequest(new { message = $"Brand ID {dto.BrandId} không tồn tại." });
                 }
 
-                // ===== VALIDATE FILES =====
+
                 if (dto.VideoFile == null || dto.VideoFile.Length == 0)
                 {
                     _logger.LogWarning("VideoFile missing or empty");
@@ -133,7 +133,7 @@ namespace HakiBaVuong.Controllers
                     return BadRequest(new { message = "Kích thước thumbnail vượt quá 10MB." });
                 }
 
-                // ===== CREATE DIRECTORIES =====
+
                 var videosFolder = Path.Combine(_environment.ContentRootPath, "Uploads", "videos");
                 var thumbnailsFolder = Path.Combine(_environment.ContentRootPath, "Uploads", "thumbnails");
 
@@ -143,7 +143,7 @@ namespace HakiBaVuong.Controllers
                 if (!Directory.Exists(thumbnailsFolder))
                     Directory.CreateDirectory(thumbnailsFolder);
 
-                // ===== SAVE FILES =====
+
                 var videoFileName = $"video_{DateTime.UtcNow.Ticks}{videoExtension}";
                 var videoPath = Path.Combine(videosFolder, videoFileName);
 
@@ -162,7 +162,7 @@ namespace HakiBaVuong.Controllers
 
                 _logger.LogInformation("Files saved - Video: {VideoFileName}, Thumbnail: {ThumbFileName}", videoFileName, thumbnailFileName);
 
-                // ===== CREATE VIDEO RECORD =====
+       
                 var video = new ShortVideo
                 {
                     BrandId = dto.BrandId,
@@ -191,7 +191,7 @@ namespace HakiBaVuong.Controllers
             }
         }
 
-        // POST: api/reels/{id}/like
+     
         [HttpPost("{id}/like")]
         [Authorize(Roles = "Customer")]
         public async Task<IActionResult> ToggleLike(int id)
@@ -216,7 +216,7 @@ namespace HakiBaVuong.Controllers
             return Ok();
         }
 
-        // POST: api/reels/{id}/comment
+  
         [HttpPost("{id}/comment")]
         [Authorize(Roles = "Customer")]
         public async Task<IActionResult> Comment(int id, [FromBody] VideoCommentDTO dto)
@@ -239,7 +239,7 @@ namespace HakiBaVuong.Controllers
             return Ok(comment);
         }
 
-        // GET: api/reels/{id}/comments?page=1
+   
         [HttpGet("{id}/comments")]
         public async Task<IActionResult> GetComments(int id, [FromQuery] int page = 1)
         {
@@ -255,7 +255,7 @@ namespace HakiBaVuong.Controllers
             return Ok(comments);
         }
 
-        // POST: api/reels/{id}/share
+      
         [HttpPost("{id}/share")]
         public async Task<IActionResult> ShareVideo(int id)
         {
@@ -271,7 +271,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Chia sẻ video thành công!" });
         }
 
-        // POST: api/reels/brand/{brandId}/follow
+ 
         [HttpPost("brand/{brandId}/follow")]
         [Authorize(Roles = "Customer")]
         public async Task<IActionResult> FollowBrand(int brandId)
@@ -292,7 +292,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Theo dõi brand thành công!" });
         }
 
-        // DELETE: api/reels/brand/{brandId}/unfollow
+     
         [HttpDelete("brand/{brandId}/unfollow")]
         [Authorize(Roles = "Customer")]
         public async Task<IActionResult> UnfollowBrand(int brandId)
@@ -313,7 +313,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Hủy theo dõi thành công!" });
         }
 
-        // GET: api/reels/brand/{brandId}/products?page=1
+    
         [HttpGet("brand/{brandId}/products")]
         public async Task<IActionResult> GetBrandProducts(int brandId, [FromQuery] int page = 1)
         {
@@ -342,7 +342,7 @@ namespace HakiBaVuong.Controllers
             return Ok(products);
         }
 
-        // GET: api/reels/brand/my-videos?page=1
+
         [HttpGet("brand/my-videos")]
         [Authorize(Roles = "Brand")]
         public async Task<IActionResult> GetMyVideos([FromQuery] int page = 1)
@@ -382,7 +382,7 @@ namespace HakiBaVuong.Controllers
             return Ok(videos);
         }
 
-        // PUT: api/reels/{id}
+     
         [HttpPut("{id}")]
         [Authorize(Roles = "Brand")]
         public async Task<IActionResult> UpdateVideo(int id, [FromBody] UpdateVideoDTO dto)
@@ -407,7 +407,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Cập nhật video thành công!" });
         }
 
-        // DELETE: api/reels/{id}
+   
         [HttpDelete("{id}")]
         [Authorize(Roles = "Brand")]
         public async Task<IActionResult> DeleteVideo(int id)
@@ -460,7 +460,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Xóa video thành công!" });
         }
 
-        // GET: api/reels/brands (Get all brands for dropdown)
+ 
         [HttpGet("brands")]
         public async Task<IActionResult> GetAllBrands()
         {
@@ -484,7 +484,7 @@ namespace HakiBaVuong.Controllers
             }
         }
 
-        // GET: api/reels/videos (Get all videos)
+    
         [HttpGet("videos")]
         [Produces("application/json")]
         public async Task<IActionResult> GetAllVideos([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
@@ -544,7 +544,7 @@ namespace HakiBaVuong.Controllers
             }
         }
 
-        // GET: api/reels/videos/{id} (Get single video by ID)
+    
         [HttpGet("videos/{id}")]
         [Produces("application/json")]
         public async Task<IActionResult> GetVideoById(int id)
@@ -597,7 +597,7 @@ namespace HakiBaVuong.Controllers
             }
         }
 
-        // GET: api/reels/brand/{brandId}/videos (Get videos by brand)
+    
         [HttpGet("brand/{brandId}/videos")]
         public async Task<IActionResult> GetVideosByBrand(int brandId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
         {
@@ -662,7 +662,7 @@ namespace HakiBaVuong.Controllers
         }
     }
 
-    // DTOs
+  
     public class UploadVideoDTO
     {
         public int BrandId { get; set; }

@@ -10,7 +10,7 @@ namespace HakiBaVuong.Controllers
 {
     [Route("api/shipper")]
     [ApiController]
-    [Authorize(Roles = "Shipper")]  // Tất cả endpoint đều cần token Shipper
+    [Authorize(Roles = "Shipper")] 
     public class ShipperController : ControllerBase
     {
         private readonly DataContext _context;
@@ -28,7 +28,7 @@ namespace HakiBaVuong.Controllers
             return int.TryParse(claim, out var id) ? id : throw new UnauthorizedAccessException("Không xác định được shipper.");
         }
 
-        // ==================== 1. LẤY THÔNG TIN CÁ NHÂN ====================
+
         [HttpGet("profile")]
         public async Task<ActionResult<ShipperDTO>> GetProfile()
         {
@@ -54,7 +54,7 @@ namespace HakiBaVuong.Controllers
             return Ok(shipper);
         }
 
-        // ==================== 2. CẬP NHẬT HỒ SƠ ====================
+
         [HttpPut("profile")]
         public async Task<IActionResult> UpdateProfile([FromBody] ShipperUpdateDTO model)
         {
@@ -76,7 +76,6 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Cập nhật hồ sơ thành công!" });
         }
 
-        // ==================== 3. DANH SÁCH ĐƠN HÀNG CẦN GIAO (chờ shipper nhận) ====================
         [HttpGet("pending-orders")]
         public async Task<ActionResult<IEnumerable<OrderDTO>>> GetPendingOrders()
         {
@@ -116,7 +115,7 @@ namespace HakiBaVuong.Controllers
             return Ok(orders);
         }
 
-        // ==================== 4. NHẬN GIAO ĐƠN HÀNG ====================
+
         [HttpPost("accept-order/{orderId}")]
         public async Task<IActionResult> AcceptOrder(int orderId)
         {
@@ -141,7 +140,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Nhận giao đơn thành công!", orderId });
         }
 
-        // ==================== 5. DANH SÁCH ĐƠN HÀNG ĐANG GIAO CỦA TÔI ====================
+
         [HttpGet("deliveries-in-progress")]
         public async Task<ActionResult<IEnumerable<OrderDTO>>> GetDeliveriesInProgress()
         {
@@ -189,7 +188,7 @@ namespace HakiBaVuong.Controllers
             return Ok(orders);
         }
 
-        // ==================== 6. HOÀN THÀNH GIAO HÀNG ====================
+
         [HttpPost("complete-delivery/{orderId}")]
         public async Task<IActionResult> CompleteDelivery(int orderId)
         {
@@ -249,7 +248,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Giao hàng thành công!", order = completedOrder });
         }
 
-        // ==================== 7. DANH SÁCH ĐƠN HÀNG ĐÃ GIAO ====================
+
         [HttpGet("completed-deliveries")]
         public async Task<ActionResult<IEnumerable<OrderDTO>>> GetCompletedDeliveries([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
@@ -300,7 +299,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { data = orders, page, pageSize, total = await _context.Orders.CountAsync(o => o.ShipperId == shipperId && o.DeliveryStatus == "Đã giao hàng") });
         }
 
-        // ==================== 8. CẬP NHẬT VỊ TRÍ GPS (dùng cho map realtime) ====================
+
         [HttpPost("update-location")]
         [Authorize(Roles = "Shipper")]
         public async Task<IActionResult> UpdateLocation([FromBody] LocationDTO model)
@@ -332,7 +331,7 @@ namespace HakiBaVuong.Controllers
             return Ok(new { message = "Cập nhật vị trí thành công!" });
         }
 
-        // ==================== 9. THỐNG KÊ DOANH THU (tùy chọn) ====================
+
         [HttpGet("stats")]
         public async Task<ActionResult<object>> GetStats()
         {

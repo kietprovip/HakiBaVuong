@@ -810,7 +810,7 @@ namespace HakiBaVuong.Controllers
                 _context.Payments.Remove(order.Payment);
             }
 
-            // Remove related Revenue
+           
             var revenue = await _context.Revenues.FirstOrDefaultAsync(r => r.OrderId == id);
             if (revenue != null)
             {
@@ -836,7 +836,7 @@ namespace HakiBaVuong.Controllers
             return int.TryParse(userIdClaim, out int userId) ? userId : null;
         }
         [HttpGet("{orderId}/tracking")]
-        [Authorize] // Customer phải đăng nhập
+        [Authorize] 
         public async Task<IActionResult> GetTracking(int orderId)
         {
             var customerId = GetCustomerId();
@@ -852,7 +852,7 @@ namespace HakiBaVuong.Controllers
                 .Select(l => new { l.Latitude, l.Longitude, l.UpdatedAt })
                 .FirstOrDefaultAsync();
 
-            var customerLocation = new { Latitude = 0m, Longitude = 0m }; // Có thể dùng Google Geocoding từ order.Address
+            var customerLocation = new { Latitude = 0m, Longitude = 0m }; 
 
             return Ok(new
             {
@@ -867,7 +867,7 @@ namespace HakiBaVuong.Controllers
                 },
                 shipperLocation = location ?? new { Latitude = 0m, Longitude = 0m, UpdatedAt = DateTime.UtcNow },
                 customerLocation,
-                estimatedMinutes = 15 // Có thể tính thật bằng Google Distance Matrix API
+                estimatedMinutes = 15 
             });
         }
     }
