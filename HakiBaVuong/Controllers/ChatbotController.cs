@@ -88,12 +88,12 @@ namespace HakiBaVuong.Controllers
 
             var parts = new List<object> { new { text = prompt } };
 
-            // Xử lý URL images (tải từ internet)
+
             if (imageUrls != null && imageUrls.Any())
             {
                 foreach (var url in imageUrls.Take(3)) 
                 {
-                    // Kiểm tra nếu là Data URI (base64 dạng URL)
+
                     if (url.StartsWith("data:"))
                     {
                         var (mimeType, base64Data) = ExtractBase64FromDataUri(url);
@@ -111,7 +111,7 @@ namespace HakiBaVuong.Controllers
                     }
                     else
                     {
-                        // URL thông thường - tải từ internet
+
                         var imageBytes = await DownloadImageAsync(url);
                         if (imageBytes != null)
                         {
@@ -128,14 +128,10 @@ namespace HakiBaVuong.Controllers
                 }
             }
 
-            // Xử lý Base64 images (gửi trực tiếp từ FE)
             if (base64Images != null && base64Images.Any())
             {
                 foreach (var base64String in base64Images.Take(3))
                 {
-                    // Base64 string có thể ở 2 dạng:
-                    // 1. "data:image/jpeg;base64,/9j/4AAQSkZJ..." (Data URI)
-                    // 2. "/9j/4AAQSkZJ..." (pure base64)
 
                     if (base64String.StartsWith("data:"))
                     {
@@ -154,7 +150,7 @@ namespace HakiBaVuong.Controllers
                     }
                     else
                     {
-                        // Pure base64 - giả định là JPEG nếu không có MIME type
+
                         parts.Add(new
                         {
                             inline_data = new
@@ -216,7 +212,7 @@ namespace HakiBaVuong.Controllers
         {
             try
             {
-                // Format: "data:image/jpeg;base64,/9j/4AAQSkZJ..."
+
                 if (!dataUri.StartsWith("data:"))
                     return ("image/jpeg", dataUri);
 
@@ -224,10 +220,10 @@ namespace HakiBaVuong.Controllers
                 if (parts.Length != 2)
                     return ("image/jpeg", "");
 
-                var mimeTypePart = parts[0]; // "data:image/jpeg;base64"
-                var base64Data = parts[1];   // "/9j/4AAQSkZJ..."
+                var mimeTypePart = parts[0];
+                var base64Data = parts[1];  
 
-                var mimeType = "image/jpeg"; // default
+                var mimeType = "image/jpeg"; 
                 if (mimeTypePart.Contains("image/png"))
                     mimeType = "image/png";
                 else if (mimeTypePart.Contains("image/webp"))

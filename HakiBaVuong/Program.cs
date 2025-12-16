@@ -112,6 +112,7 @@ builder.Services.AddSession(options =>
     options.Cookie.SameSite = SameSiteMode.None;
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.None : CookieSecurePolicy.Always;
 });
+builder.Services.AddSingleton<RecommendationService>();
 var app = builder.Build();
 
 
