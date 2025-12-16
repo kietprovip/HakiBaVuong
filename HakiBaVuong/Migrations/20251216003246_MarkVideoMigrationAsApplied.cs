@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace HakiBaVuong.Migrations
 {
     /// <inheritdoc />
-    public partial class AddVideoViewAndVideoShare : Migration
+    public partial class MarkVideoMigrationAsApplied : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

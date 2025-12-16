@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HakiBaVuong.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20251215235043_AddVideoViewAndVideoShare")]
-    partial class AddVideoViewAndVideoShare
+    [Migration("20251216003246_MarkVideoMigrationAsApplied")]
+    partial class MarkVideoMigrationAsApplied
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
