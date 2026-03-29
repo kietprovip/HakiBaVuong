@@ -97,18 +97,8 @@ Sửa `appsettings.json` hoặc `appsettings.Development.json`:
 - Cache, pagination, tối ưu query, bảo mật OWASP.
 
 
-## Đóng góp
-
-1. Fork repo
-2. Tạo branch: `feature/<tên>`
-3. Commit + push
-4. Tạo PR với mô tả chi tiết
-
-
 ## Liên kết
 - Frontend: https://github.com/KingAzgad/doancosohutech.git
 
 
-## License
-- Thêm file `LICENSE` phù hợp (`MIT`, `Apache`, v.v.)
 
